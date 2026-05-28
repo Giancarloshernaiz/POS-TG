@@ -73,6 +73,7 @@ playwright-report/
 # IDE / editor local settings
 .idea/
 .vscode/
+.claude/
 !.vscode/extensions.json
 !.vscode/settings.json
 !.vscode/tasks.json
