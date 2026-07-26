@@ -202,7 +202,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
           <DialogDescription>
             {product
               ? `SKU original: ${product.sku}`
-              : 'Completá los datos básicos. Stock se gestiona desde inventario o recepción.'}
+              : 'Completa los datos básicos. Stock se gestiona desde inventario o recepción.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -382,7 +382,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
               <span className="text-sm text-muted-foreground">unidades</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Si lo dejás en blanco, se usa el aviso de la categoría y, si tampoco tiene, el aviso
+              Si lo dejas en blanco, se usa el aviso de la categoría y, si tampoco tiene, el aviso
               general de la tienda (Configuración).
             </p>
           </div>

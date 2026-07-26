@@ -12,9 +12,9 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
   CardDescription
 } from '@renderer/components/ui/card'
+import logoUrl from '@renderer/assets/logo.png'
 
 const formSchema = z.object({
   username: z.string().min(1, 'requerido'),
@@ -47,8 +47,8 @@ export function LoginScreen(): React.JSX.Element {
       } else {
         const msgMap: Record<string, string> = {
           INVALID_CREDENTIALS: 'Usuario o contraseña inválido',
-          USER_INACTIVE: 'Usuario inactivo. Contactá al administrador.',
-          RATE_LIMITED: 'Demasiados intentos. Esperá 1 minuto.',
+          USER_INACTIVE: 'Usuario inactivo. Contacta al administrador.',
+          RATE_LIMITED: 'Demasiados intentos. Espera 1 minuto.',
           BAD_INPUT: 'Datos inválidos'
         }
         setServerError(msgMap[res.error.code] ?? res.error.message)
@@ -63,9 +63,13 @@ export function LoginScreen(): React.JSX.Element {
   return (
     <div className="flex h-full items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">POS-TG</CardTitle>
-          <CardDescription>Iniciá sesión para continuar</CardDescription>
+        <CardHeader className="items-center text-center">
+          <img
+            src={logoUrl}
+            alt="Tiendas Galas"
+            className="mb-2 h-20 w-auto max-w-56 object-contain"
+          />
+          <CardDescription>Inicia sesión para continuar</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -116,7 +120,7 @@ export function LoginScreen(): React.JSX.Element {
             </Button>
           </form>
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Default: admin / admin1234 (cambiá al entrar)
+            Default: admin / admin1234 (cambia al entrar)
           </p>
         </CardContent>
       </Card>

@@ -168,7 +168,7 @@ function AdjustStockDialog({
       return
     }
     if (!reason.trim()) {
-      toast.error('Especificá un motivo')
+      toast.error('Especifica un motivo')
       return
     }
     setSubmitting(true)
@@ -186,7 +186,7 @@ function AdjustStockDialog({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       const human: Record<string, string> = {
-        FORBIDDEN: 'No tenés permiso para ajustar inventario',
+        FORBIDDEN: 'No tienes permiso para ajustar inventario',
         PRODUCT_NOT_FOUND: 'Producto no existe'
       }
       toast.error(human[msg] ?? msg)

@@ -57,7 +57,7 @@ export function SerialLookup(): React.JSX.Element {
           <Input
             value={imei}
             onChange={(e) => setImei(e.target.value)}
-            placeholder="Ingresá o escaneá un IMEI / serial…"
+            placeholder="Ingresa o escanea un IMEI / serial…"
             className="pl-8"
             autoFocus
           />

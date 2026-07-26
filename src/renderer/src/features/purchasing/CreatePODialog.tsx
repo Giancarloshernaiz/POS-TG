@@ -91,11 +91,11 @@ export function CreatePODialog({ open, onOpenChange }: Props): React.JSX.Element
   async function submit(): Promise<void> {
     if (!session) return
     if (!supplierId) {
-      toast.error('Elegí un proveedor')
+      toast.error('Elige un proveedor')
       return
     }
     if (lines.length === 0) {
-      toast.error('Añadí al menos una línea')
+      toast.error('Añade al menos una línea')
       return
     }
     if (lines.some((l) => l.qty <= 0)) {
@@ -125,7 +125,7 @@ export function CreatePODialog({ open, onOpenChange }: Props): React.JSX.Element
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       const human: Record<string, string> = {
-        FORBIDDEN: 'No tenés permiso para crear PO',
+        FORBIDDEN: 'No tienes permiso para crear PO',
         SUPPLIER_NOT_FOUND: 'Proveedor no existe',
         PRODUCT_NOT_FOUND: 'Algún producto no existe'
       }
@@ -208,7 +208,7 @@ export function CreatePODialog({ open, onOpenChange }: Props): React.JSX.Element
                 <TableHeader>
                   <TableRow>
                     <TableHead>Producto</TableHead>
-                    <TableHead className="w-20">Cant.</TableHead>
+                    <TableHead className="w-28">Cant.</TableHead>
                     <TableHead className="w-56">Costo unit.</TableHead>
                     <TableHead className="text-right">Subtotal</TableHead>
                     <TableHead></TableHead>
@@ -216,33 +216,13 @@ export function CreatePODialog({ open, onOpenChange }: Props): React.JSX.Element
                 </TableHeader>
                 <TableBody>
                   {lines.map((l, idx) => (
-                    <TableRow key={l.productId}>
-                      <TableCell className="text-sm">{l.productLabel}</TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={l.qty}
-                          onChange={(e) =>
-                            updateLine(idx, { qty: parseInt(e.target.value || '0', 10) })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <MoneyInput
-                          valueCents={l.unitCostCents}
-                          onChangeCents={(c) => updateLine(idx, { unitCostCents: c })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatMoney(l.qty * l.unitCostCents)}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => removeLine(idx)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <POLineRow
+                      key={l.productId}
+                      line={l}
+                      onChangeQty={(qty) => updateLine(idx, { qty })}
+                      onChangeCost={(c) => updateLine(idx, { unitCostCents: c })}
+                      onRemove={() => removeLine(idx)}
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -266,5 +246,58 @@ export function CreatePODialog({ open, onOpenChange }: Props): React.JSX.Element
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function POLineRow({
+  line,
+  onChangeQty,
+  onChangeCost,
+  onRemove
+}: {
+  line: LineDraft
+  onChangeQty: (qty: number) => void
+  onChangeCost: (cents: number) => void
+  onRemove: () => void
+}): React.JSX.Element {
+  // Local string state so the user can clear/retype without fighting a "0"
+  // residual. Parent stays as the source of truth via onChangeQty.
+  const [qtyText, setQtyText] = useState<string>(String(line.qty))
+  const [prevQty, setPrevQty] = useState<number>(line.qty)
+  if (line.qty !== prevQty) {
+    setPrevQty(line.qty)
+    setQtyText(String(line.qty))
+  }
+  return (
+    <TableRow>
+      <TableCell className="text-sm">{line.productLabel}</TableCell>
+      <TableCell>
+        <Input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={qtyText}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^0-9]/g, '')
+            setQtyText(raw)
+            const n = raw === '' ? 0 : parseInt(raw, 10)
+            setPrevQty(n)
+            onChangeQty(n)
+          }}
+        />
+      </TableCell>
+      <TableCell>
+        <MoneyInput valueCents={line.unitCostCents} onChangeCents={onChangeCost} />
+      </TableCell>
+      <TableCell className="text-right font-mono">
+        {formatMoney(line.qty * line.unitCostCents)}
+      </TableCell>
+      <TableCell>
+        <Button variant="ghost" size="icon" onClick={onRemove}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </TableCell>
+    </TableRow>
   )
 }

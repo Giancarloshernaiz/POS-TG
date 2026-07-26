@@ -19,6 +19,7 @@ import { useLowStockGlobal, useSetLowStockGlobal, useRefreshFx, useSetManualFx }
 import { StoreProfileCard } from './StoreProfileCard'
 import { PrinterCard } from './PrinterCard'
 import { IgtfCard } from './IgtfCard'
+import { BackupCard } from './BackupCard'
 
 const SOURCE_LABEL: Record<string, string> = {
   api: 'API (dolarapi)',
@@ -103,6 +104,7 @@ export function SettingsScreen(): React.JSX.Element {
 
       <StoreProfileCard />
       <PrinterCard />
+      {canManage && <BackupCard />}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -156,7 +158,7 @@ export function SettingsScreen(): React.JSX.Element {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Usá esto si BCV no está disponible. El próximo refresco automático lo sobrescribe.
+                  Usa esto si BCV no está disponible. El próximo refresco automático lo sobrescribe.
                 </p>
               </div>
             )}
@@ -199,7 +201,7 @@ export function SettingsScreen(): React.JSX.Element {
               </div>
             </div>
             <div className="rounded-md bg-muted/30 p-3 text-xs text-muted-foreground">
-              Este aviso aplica a todos los productos. Si querés, podés poner un aviso distinto a
+              Este aviso aplica a todos los productos. Si quieres, puedes poner un aviso distinto a
               una <strong>categoría</strong> (en Productos → Categorías) o a un{' '}
               <strong>producto</strong> puntual (al editarlo). El más específico manda: producto,
               luego categoría, luego este general.

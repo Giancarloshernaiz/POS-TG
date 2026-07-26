@@ -118,7 +118,7 @@ export function MoneyInput({
       </div>
       {!rate && (
         <p className="mt-1 text-[10px] text-muted-foreground">
-          Sin tasa BCV — solo USD. Cargá la tasa en Configuración.
+          Sin tasa BCV — solo USD. Carga la tasa en Configuración.
         </p>
       )}
     </div>

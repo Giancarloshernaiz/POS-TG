@@ -11,6 +11,7 @@ import { contracts } from '@shared/ipc/contracts'
 import { handlers } from './ipc/handlers'
 import { seedAuthIfNeeded } from './auth/seed'
 import { startFxScheduler } from './infrastructure/fx/scheduler'
+import { startBackupScheduler } from './backup/scheduler'
 
 let splashWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
@@ -128,6 +129,7 @@ async function bootstrap(): Promise<void> {
   logger.info('ipc contracts registered')
 
   startFxScheduler(publish)
+  startBackupScheduler()
 
   mainWindow = createMainWindow()
   mainWindow.once('ready-to-show', () => {

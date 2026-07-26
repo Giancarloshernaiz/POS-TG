@@ -114,7 +114,7 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
         <DialogHeader>
           <DialogTitle>Categorías y subcategorías</DialogTitle>
           <DialogDescription>
-            Agrupá productos. Una categoría puede tener subcategorías (1 nivel). Opcional: aviso de
+            Agrupa productos. Una categoría puede tener subcategorías (1 nivel). Opcional: aviso de
             stock bajo y descuento por categoría.
           </DialogDescription>
         </DialogHeader>

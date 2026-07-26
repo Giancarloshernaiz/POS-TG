@@ -82,10 +82,31 @@ export async function printSaleTicket(sale: SaleDTO, store: StoreProfileDTO | nu
   const printer = build(cfg)
   const rate = sale.rateUsed
 
+  // Pre-check connection (same as printTest) so we fail with PRINTER_OFFLINE
+  // instead of a generic PRINT_FAILED when the printer is unreachable.
+  try {
+    const connected = await printer.isPrinterConnected()
+    if (!connected) {
+      throw new PrinterError(
+        'PRINTER_OFFLINE',
+        `impresora no responde en ${cfg.interface}`
+      )
+    }
+  } catch (e) {
+    if (e instanceof PrinterError) throw e
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.error({ err: e, iface: cfg.interface }, 'printer connection check failed')
+    throw new PrinterError('PRINTER_OFFLINE', `no se pudo conectar: ${msg}`)
+  }
+
+  // Helper: Bs primary; falls back to USD if no rate.
+  const amount = (cents: number): string =>
+    rate ? (formatVes(cents, rate) ?? formatMoney(cents)) : formatMoney(cents)
+
   printer.alignCenter()
   printer.bold(true)
   printer.setTextDoubleHeight()
-  printer.println(store?.legalName || 'POS-TG')
+  printer.println(store?.legalName || 'Tienda')
   printer.setTextNormal()
   printer.bold(false)
   if (store?.rif) printer.println(`RIF: ${store.rif}`)
@@ -102,39 +123,44 @@ export async function printSaleTicket(sale: SaleDTO, store: StoreProfileDTO | nu
 
   for (const l of sale.lines) {
     printer.println(`${l.qty} x ${l.description}`)
-    const right = `${formatMoney(l.lineSubtotal)}`
-    printer.leftRight(`  ${l.sku}`, right)
+    printer.leftRight(`  ${l.sku}`, amount(l.lineSubtotal))
   }
   printer.drawLine()
 
-  printer.leftRight('Subtotal', formatMoney(sale.subtotal))
-  printer.leftRight('IVA', formatMoney(sale.taxTotal))
-  if (sale.igtfTotal > 0) printer.leftRight('IGTF (3%)', formatMoney(sale.igtfTotal))
+  printer.leftRight('Subtotal', amount(sale.subtotal))
+  printer.leftRight('IVA', amount(sale.taxTotal))
+  if (sale.igtfTotal > 0) printer.leftRight('IGTF (3%)', amount(sale.igtfTotal))
   printer.bold(true)
   printer.setTextDoubleHeight()
-  printer.leftRight('TOTAL $', formatMoney(sale.total))
+  printer.leftRight('TOTAL', amount(sale.total))
   printer.setTextNormal()
   printer.bold(false)
-  if (rate) printer.leftRight('TOTAL Bs', formatVes(sale.total, rate) ?? '')
+  if (rate) printer.leftRight('Equivalente USD', formatMoney(sale.total))
   printer.drawLine()
 
   for (const p of sale.payments) {
     printer.leftRight(
       PAYMENT_LABEL[p.method as PaymentMethod] ?? p.method,
-      formatMoney(p.amountUsd)
+      amount(p.amountUsd)
     )
   }
 
   printer.alignCenter()
   printer.newLine()
-  printer.println('¡Gracias por su compra!')
+  // No leading "¡" — extended Latin char (0xAD) gets misread as a CJK lead
+  // byte on some thermal firmware and corrupts the next character.
+  printer.println('Gracias por su compra!')
   printer.cut()
   printer.openCashDrawer()
 
   try {
     await printer.execute()
   } catch (e) {
-    logger.error({ err: e, sale: sale.number }, 'printer execute failed')
-    throw new PrinterError('PRINT_FAILED', 'no se pudo imprimir')
+    const cause = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    logger.error(
+      { err: e, sale: sale.number, iface: cfg.interface },
+      'printer execute failed'
+    )
+    throw new PrinterError('PRINT_FAILED', `no se pudo imprimir: ${cause}`)
   }
 }

@@ -56,7 +56,7 @@ export function ProductPickerDialog({ open, onClose, onPick }: Props): React.JSX
             Buscar producto (modo prueba)
           </DialogTitle>
           <DialogDescription>
-            Bypass temporal del lector de código. Elegí un producto para agregarlo.
+            Bypass temporal del lector de código. Elige un producto para agregarlo.
           </DialogDescription>
         </DialogHeader>
         <div className="relative">

@@ -29,6 +29,7 @@ import { findByCode, useCreateSale, printTicket } from './hooks'
 import { SerialPickDialog } from './SerialPickDialog'
 import { ProductPickerDialog } from './ProductPickerDialog'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
+import { QuickProductCreate } from './QuickProductCreate'
 import { formatMoney, formatVes } from '@renderer/lib/money'
 import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethods'
 import { PAYMENT_DIVISA } from '@shared/payment'
@@ -82,8 +83,10 @@ function POSContent(): React.JSX.Element {
   const [code, setCode] = useState('')
   const [serialProduct, setSerialProduct] = useState<ProductDTO | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false) // TEMP bypass: manual product picker
+  const [unknownCode, setUnknownCode] = useState<string | null>(null) // quick-create on unknown scan
   const [pays, setPays] = useState<PayEntry[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const canCreateProduct = useAuth((s) => s.hasPermission('products.create'))
 
   // ---- Totals ----
   const subtotal = cart.lines.reduce((s, l) => s + l.effectivePrice * l.qty, 0)
@@ -131,7 +134,13 @@ function POSContent(): React.JSX.Element {
     try {
       const product = await findByCode(c)
       if (!product) {
-        toast.error('Producto no encontrado')
+        if (canCreateProduct) {
+          // Auto-open quick-create with the scanned code prefilled. After save it
+          // gets added to the cart in onCreated.
+          setUnknownCode(c)
+        } else {
+          toast.error('Producto no encontrado (sin permiso para crearlo)')
+        }
         return
       }
       addProduct(product)
@@ -183,11 +192,14 @@ function POSContent(): React.JSX.Element {
       )
       // Print ticket (non-blocking: sale is already saved).
       void printTicket(authSessionId, res.sale.id).catch((err) => {
-        const code = err instanceof Error ? err.message : String(err)
+        const code = (err as { code?: string }).code
+        const msg = err instanceof Error ? err.message : String(err)
         if (code === 'PRINTER_NOT_CONFIGURED') {
-          toast.info('Venta guardada. Configurá la impresora para imprimir tickets.')
+          toast.info('Venta guardada. Configura la impresora para imprimir tickets.')
+        } else if (code === 'PRINTER_OFFLINE') {
+          toast.warning(`Venta guardada. Impresora no responde: ${msg}`)
         } else {
-          toast.warning(`Venta guardada, pero no se pudo imprimir (${code}).`)
+          toast.warning(`Venta guardada, pero no se pudo imprimir. ${msg}`)
         }
       })
       cart.clear()
@@ -234,7 +246,7 @@ function POSContent(): React.JSX.Element {
               onChange={(e) => setCode(e.target.value)}
               placeholder={
                 customerReady
-                  ? 'Escaneá código de barras o escribí SKU…'
+                  ? 'Escanea código de barras o escribe SKU…'
                   : 'Primero identifica al cliente o toca "Sin cliente"'
               }
               className="pl-8"
@@ -278,7 +290,7 @@ function POSContent(): React.JSX.Element {
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
                       <ShoppingCart className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                      Carrito vacío. Escaneá un producto.
+                      Carrito vacío. Escanea un producto.
                     </TableCell>
                   </TableRow>
                 )}
@@ -326,7 +338,7 @@ function POSContent(): React.JSX.Element {
               </Button>
             </div>
             {pays.length === 0 && (
-              <p className="text-xs text-muted-foreground">Añadí al menos un método de pago.</p>
+              <p className="text-xs text-muted-foreground">Añade al menos un método de pago.</p>
             )}
             {pays.map((p) => (
               <div key={p.id} className="space-y-1 rounded-md border p-2">
@@ -410,6 +422,24 @@ function POSContent(): React.JSX.Element {
           searchRef.current?.focus()
         }}
       />
+
+      {unknownCode && (
+        <QuickProductCreate
+          key={unknownCode}
+          open
+          initialCode={unknownCode}
+          onClose={() => {
+            setUnknownCode(null)
+            searchRef.current?.focus()
+          }}
+          onCreated={(p) => {
+            addProduct(p)
+            setUnknownCode(null)
+            setCode('')
+            searchRef.current?.focus()
+          }}
+        />
+      )}
 
       <SerialPickDialog
         key={serialProduct?.id ?? 'none'}

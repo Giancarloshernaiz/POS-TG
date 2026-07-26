@@ -4,6 +4,7 @@ import { useAuth } from '@renderer/stores/auth'
 import type { FxRateDTO } from '@shared/ipc/contracts/fx'
 import type { StoreProfileDTO } from '@shared/ipc/contracts/settings'
 import type { PrinterConfigDTO } from '@shared/ipc/contracts/print'
+import type { BackupEntryDTO } from '@shared/ipc/contracts/backup'
 
 type IgtfCfg = { enabled: boolean; rateBp: number }
 
@@ -147,6 +148,45 @@ export function useSetManualFx(): ReturnType<
   return useMutation({
     mutationFn: async (input) => {
       const res = await api.fx.setManual(input)
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data
+    }
+  })
+}
+
+export function useBackups(): ReturnType<typeof useQuery<BackupEntryDTO[]>> {
+  const sessionId = useAuth((s) => s.session?.id ?? '')
+  return useQuery({
+    queryKey: ['settings', 'backups'],
+    enabled: sessionId !== '',
+    queryFn: async () => {
+      const res = await api.backup.list({ sessionId })
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data.backups
+    }
+  })
+}
+
+export function useCreateBackup(): ReturnType<typeof useMutation<BackupEntryDTO, Error, void>> {
+  const qc = useQueryClient()
+  const sessionId = useAuth((s) => s.session?.id ?? '')
+  return useMutation({
+    mutationFn: async () => {
+      const res = await api.backup.create({ sessionId })
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data.backup
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'backups'] })
+  })
+}
+
+export function useRestoreBackup(): ReturnType<
+  typeof useMutation<{ restarting: boolean }, Error, { path: string }>
+> {
+  const sessionId = useAuth((s) => s.session?.id ?? '')
+  return useMutation({
+    mutationFn: async ({ path }) => {
+      const res = await api.backup.restore({ sessionId, path })
       if (!res.ok) throw new Error(res.error.code)
       return res.data
     }

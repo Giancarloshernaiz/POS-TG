@@ -18,6 +18,7 @@ import { api } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
 import { FxBadge } from '@renderer/components/FxBadge'
 import { cn } from '@renderer/lib/utils'
+import logoUrl from '@renderer/assets/logo.png'
 
 type NavItem = {
   key: string
@@ -68,8 +69,19 @@ export function AppShell({ active, onNavigate, children }: Props): React.JSX.Ele
           collapsed ? 'w-16' : 'w-60'
         )}
       >
-        <div className="flex h-14 items-center justify-between border-b px-3">
-          {!collapsed && <span className="text-lg font-bold tracking-tight">POS-TG</span>}
+        <div
+          className={cn(
+            'flex h-14 items-center border-b px-3',
+            collapsed ? 'justify-center' : 'justify-between gap-2'
+          )}
+        >
+          {!collapsed && (
+            <img
+              src={logoUrl}
+              alt="Tiendas Galas"
+              className="h-10 w-auto max-w-40 object-contain"
+            />
+          )}
           <Button
             variant="ghost"
             size="icon"

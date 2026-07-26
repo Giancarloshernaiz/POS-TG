@@ -55,7 +55,7 @@ export async function openSession(
   notes?: string | null
 ): Promise<typeof cashSessions.$inferSelect> {
   const existing = await getActiveSession(db, userId)
-  if (existing) throw new CashError('SESSION_ALREADY_OPEN', 'ya tenés una caja abierta')
+  if (existing) throw new CashError('SESSION_ALREADY_OPEN', 'ya tienes una caja abierta')
   const id = ulid()
   const now = Date.now()
   await db

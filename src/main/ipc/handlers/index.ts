@@ -9,6 +9,7 @@ import { cashHandlers } from './cash.handler'
 import { customersHandlers } from './customers.handler'
 import { salesHandlers } from './sales.handler'
 import { printHandlers } from './print.handler'
+import { backupHandlers } from './backup.handler'
 
 export const handlers = {
   health: healthHandlers,
@@ -21,5 +22,6 @@ export const handlers = {
   cash: cashHandlers,
   customers: customersHandlers,
   sales: salesHandlers,
-  print: printHandlers
+  print: printHandlers,
+  backup: backupHandlers
 } as const

@@ -31,12 +31,12 @@ export function OpenCashForm({ context = 'cash' }: Props): React.JSX.Element {
     }
     try {
       await openMut.mutateAsync({ openingAmount: amountCents, notes: notes || null })
-      toast.success('Caja abierta — ya podés vender')
+      toast.success('Caja abierta — ya puedes vender')
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(
         msg === 'SESSION_ALREADY_OPEN'
-          ? 'Ya tenés una caja abierta'
+          ? 'Ya tienes una caja abierta'
           : msg === 'FORBIDDEN'
             ? 'Sin permiso para abrir caja'
             : msg
@@ -54,8 +54,8 @@ export function OpenCashForm({ context = 'cash' }: Props): React.JSX.Element {
           </CardTitle>
           <CardDescription>
             {context === 'pos'
-              ? 'Para empezar a vender, primero abrí la caja con el efectivo inicial.'
-              : 'Declará el efectivo inicial ($ USD) con el que arranca el turno.'}
+              ? 'Para empezar a vender, primero abre la caja con el efectivo inicial.'
+              : 'Declara el efectivo inicial ($ USD) con el que arranca el turno.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -68,7 +68,7 @@ export function OpenCashForm({ context = 'cash' }: Props): React.JSX.Element {
               autoFocus
             />
             <p className="text-xs text-muted-foreground">
-              Efectivo con el que abre la caja (fondo de cambio). Podés ingresarlo en $ o en Bs.
+              Efectivo con el que abre la caja (fondo de cambio). Puedes ingresarlo en $ o en Bs.
               Puede ser 0.
             </p>
           </div>

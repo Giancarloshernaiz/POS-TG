@@ -30,7 +30,11 @@ export async function searchProducts(term: string): Promise<ProductDTO[]> {
 
 export async function printTicket(sessionId: string, saleId: string): Promise<void> {
   const res = await api.print.ticket({ sessionId, saleId })
-  if (!res.ok) throw new Error(res.error.code)
+  if (!res.ok) {
+    const err = new Error(res.error.message || res.error.code) as Error & { code?: string }
+    err.code = res.error.code
+    throw err
+  }
 }
 
 export async function listAvailableSerials(productId: string): Promise<SerialDTO[]> {

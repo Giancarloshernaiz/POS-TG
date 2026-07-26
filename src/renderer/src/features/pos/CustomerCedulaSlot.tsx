@@ -86,7 +86,7 @@ export function CustomerCedulaSlot({
   async function search(): Promise<void> {
     const id = docId.trim()
     if (!id) {
-      toast.error('Ingresá número de documento')
+      toast.error('Ingresa número de documento')
       return
     }
     setSearching(true)

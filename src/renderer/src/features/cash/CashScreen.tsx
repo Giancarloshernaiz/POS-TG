@@ -232,7 +232,7 @@ function MovementDialog({
           <DialogTitle>
             {type === 'deposit' ? 'Ingreso de efectivo' : 'Retiro de efectivo'}
           </DialogTitle>
-          <DialogDescription>Ingresá el monto en $ o en Bs.</DialogDescription>
+          <DialogDescription>Ingresa el monto en $ o en Bs.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-2">
@@ -300,7 +300,7 @@ function CloseDialog({
         <DialogHeader>
           <DialogTitle>Cerrar caja (arqueo)</DialogTitle>
           <DialogDescription>
-            Contá el efectivo físico y declaralo. Se compara con lo esperado.
+            Cuenta el efectivo físico y decláralo. Se compara con lo esperado.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

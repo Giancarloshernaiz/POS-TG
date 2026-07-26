@@ -80,6 +80,11 @@ export function getCurrentSchemaVersion(): number {
   return row?.current ?? 0
 }
 
+/** Highest migration version bundled with this app build. */
+export function getBundledTargetVersion(): number {
+  return loadMigrations().reduce((max, m) => Math.max(max, m.version), 0)
+}
+
 function backupDb(version: number): string {
   const userData = app.getPath('userData')
   const backupDir = join(userData, 'backups', 'pre-migration')

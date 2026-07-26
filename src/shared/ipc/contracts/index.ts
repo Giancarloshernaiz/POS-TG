@@ -9,6 +9,7 @@ import { cashContract } from './cash'
 import { customersContract } from './customers'
 import { salesContract } from './sales'
 import { printContract } from './print'
+import { backupContract } from './backup'
 
 export const contracts = {
   health: healthContract,
@@ -21,7 +22,8 @@ export const contracts = {
   cash: cashContract,
   customers: customersContract,
   sales: salesContract,
-  print: printContract
+  print: printContract,
+  backup: backupContract
 } as const
 
 export type Contracts = typeof contracts

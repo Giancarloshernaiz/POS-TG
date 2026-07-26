@@ -47,13 +47,13 @@ export function SerialPickDialog({ product, onPick, onClose }: Props): React.JSX
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Seleccionar serial / IMEI</DialogTitle>
-          <DialogDescription>{product?.name} — escaneá o elegí una unidad.</DialogDescription>
+          <DialogDescription>{product?.name} — escanea o elige una unidad.</DialogDescription>
         </DialogHeader>
         <Input
           autoFocus
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Escaneá o buscá IMEI…"
+          placeholder="Escanea o busca IMEI…"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && filtered.length === 1 && filtered[0]) {
               onPick(filtered[0])

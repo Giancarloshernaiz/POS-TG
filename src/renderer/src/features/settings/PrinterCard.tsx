@@ -58,7 +58,7 @@ export function PrinterCard(): React.JSX.Element {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       const human: Record<string, string> = {
-        PRINTER_NOT_CONFIGURED: 'Configurá y activá la impresora primero',
+        PRINTER_NOT_CONFIGURED: 'Configura y activa la impresora primero',
         PRINTER_OFFLINE: 'La impresora no responde',
         PRINT_FAILED: 'No se pudo imprimir'
       }

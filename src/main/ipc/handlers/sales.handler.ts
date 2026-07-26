@@ -112,7 +112,7 @@ export const salesHandlers = {
     const db = getDb()
 
     const cashSession = await getActiveSession(db, session.userId)
-    if (!cashSession) throw new SaleError('NO_CASH_SESSION', 'abrí la caja antes de vender')
+    if (!cashSession) throw new SaleError('NO_CASH_SESSION', 'abre la caja antes de vender')
 
     // ---- Compute lines (server is source of truth) ----
     const computed: ComputedLine[] = []

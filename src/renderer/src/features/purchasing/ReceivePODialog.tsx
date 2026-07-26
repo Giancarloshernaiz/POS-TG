@@ -83,7 +83,7 @@ export function ReceivePODialog({ po, onClose }: Props): React.JSX.Element {
         SERIAL_REQUIRED: 'Seriales no aplican para este producto',
         SERIAL_DUPLICATE: 'Serial duplicado o ya existe',
         SERIAL_QTY_MISMATCH: 'Cantidad de seriales no coincide con cantidad recibida',
-        FORBIDDEN: 'No tenés permiso para recibir mercancía'
+        FORBIDDEN: 'No tienes permiso para recibir mercancía'
       }
       toast.error(human[msg] ?? msg)
     } finally {
@@ -123,16 +123,19 @@ export function ReceivePODialog({ po, onClose }: Props): React.JSX.Element {
                           type="number"
                           min={0}
                           max={remaining}
-                          value={s?.qty ?? 0}
-                          onChange={(e) =>
+                          value={s?.qty || ''}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10)
+                            const qty = Number.isFinite(v) ? v : 0
                             setLinesState((cur) => ({
                               ...cur,
                               [l.id]: {
                                 ...(cur[l.id] ?? { poLineId: l.id, qty: 0, serials: '' }),
-                                qty: parseInt(e.target.value || '0', 10)
+                                qty
                               }
                             }))
-                          }
+                          }}
                           disabled={remaining === 0}
                         />
                       </div>
