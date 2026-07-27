@@ -11,6 +11,11 @@ import {
   type Discount,
   type DiscountType
 } from '@shared/pricing'
+import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
+import type {
+  ProductUpsertPayload,
+  CategoryUpsertPayload
+} from '@main/infrastructure/sync/p2p/reducers/catalog.reducer'
 
 type Input<K extends keyof typeof catalogContract> = z.infer<(typeof catalogContract)[K]['input']>
 
@@ -35,6 +40,7 @@ function toCategoryDto(
     lowStockThreshold: row.lowStockThreshold ?? null,
     discountType: row.discountType,
     discountValue: row.discountValue,
+    icon: row.icon ?? null,
     active: row.active,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
@@ -53,6 +59,7 @@ type ProductRow = {
   costPrice: number | null
   taxRateBp: number
   tracksSerial: boolean
+  unitOfMeasure: string
   lowStockThreshold: number | null
   discountType: DiscountType
   discountValue: number
@@ -83,6 +90,7 @@ function toProductDto(row: ProductRow): ProductDTO {
     costPrice: row.costPrice,
     taxRateBp: row.taxRateBp,
     tracksSerial: row.tracksSerial,
+    unitOfMeasure: row.unitOfMeasure,
     lowStockThreshold: row.lowStockThreshold,
     discountType: row.discountType,
     discountValue: row.discountValue,
@@ -109,6 +117,7 @@ const productSelect = {
   costPrice: products.costPrice,
   taxRateBp: products.taxRateBp,
   tracksSerial: products.tracksSerial,
+  unitOfMeasure: products.unitOfMeasure,
   lowStockThreshold: products.lowStockThreshold,
   discountType: products.discountType,
   discountValue: products.discountValue,
@@ -118,6 +127,66 @@ const productSelect = {
   stock: stockLevels.quantity,
   createdAt: products.createdAt,
   updatedAt: products.updatedAt
+}
+
+// P2P (§8.4): comparte altas/ediciones de catálogo con las demás cajas de la
+// tienda (LWW). El reducer receptor ignora esto si la fila ya tiene agroId
+// (AgroOne converge ese caso vía pull, no P2P) — ver catalog.reducer.ts.
+async function emitProductUpsertEvent(db: ReturnType<typeof getDb>, id: string): Promise<void> {
+  const row = await db.select().from(products).where(eq(products.id, id)).get()
+  if (!row) return
+  let categoryAgroId: number | null = null
+  let categoryName: string | null = null
+  if (row.categoryId) {
+    const cat = await db.select().from(categories).where(eq(categories.id, row.categoryId)).get()
+    categoryAgroId = cat?.agroId ?? null
+    categoryName = cat?.name ?? null
+  }
+  const payload: ProductUpsertPayload = {
+    sku: row.sku,
+    barcode: row.barcode,
+    name: row.name,
+    description: row.description,
+    categoryAgroId,
+    categoryName,
+    basePrice: row.basePrice,
+    costPrice: row.costPrice,
+    taxRateBp: row.taxRateBp,
+    tracksSerial: row.tracksSerial,
+    unitOfMeasure: row.unitOfMeasure,
+    lowStockThreshold: row.lowStockThreshold,
+    discountType: row.discountType,
+    discountValue: row.discountValue,
+    active: row.active,
+    agroId: row.agroId
+  }
+  const env = emitLocalEvent('product', id, 'product.upserted', payload)
+  if (env) await db.update(products).set({ lwwHlc: env.hlc }).where(eq(products.id, id)).run()
+}
+
+async function emitCategoryUpsertEvent(db: ReturnType<typeof getDb>, id: string): Promise<void> {
+  const row = await db.select().from(categories).where(eq(categories.id, id)).get()
+  if (!row) return
+  let parentAgroId: number | null = null
+  let parentName: string | null = null
+  if (row.parentId) {
+    const parent = await db.select().from(categories).where(eq(categories.id, row.parentId)).get()
+    parentAgroId = parent?.agroId ?? null
+    parentName = parent?.name ?? null
+  }
+  const payload: CategoryUpsertPayload = {
+    name: row.name,
+    parentAgroId,
+    parentName,
+    lowStockThreshold: row.lowStockThreshold,
+    discountType: row.discountType,
+    discountValue: row.discountValue,
+    icon: row.icon,
+    active: row.active,
+    agroId: row.agroId
+  }
+  const env = emitLocalEvent('category', id, 'category.upserted', payload)
+  if (env) await db.update(categories).set({ lwwHlc: env.hlc }).where(eq(categories.id, id)).run()
 }
 
 async function fetchProductById(id: string): Promise<ProductDTO> {
@@ -200,11 +269,13 @@ export const catalogHandlers = {
         lowStockThreshold: input.lowStockThreshold ?? null,
         discountType: input.discountType ?? 'none',
         discountValue: input.discountValue ?? 0,
+        icon: input.icon ?? null,
         active: true,
         createdAt: now,
         updatedAt: now
       })
       .run()
+    await emitCategoryUpsertEvent(db, id)
     return fetchCategoryById(id)
   },
 
@@ -230,8 +301,10 @@ export const catalogHandlers = {
     if (input.lowStockThreshold !== undefined) updates.lowStockThreshold = input.lowStockThreshold
     if (input.discountType !== undefined) updates.discountType = input.discountType
     if (input.discountValue !== undefined) updates.discountValue = input.discountValue
+    if (input.icon !== undefined) updates.icon = input.icon
     if (input.active !== undefined) updates.active = input.active
     await db.update(categories).set(updates).where(eq(categories.id, input.id)).run()
+    await emitCategoryUpsertEvent(db, input.id)
     return fetchCategoryById(input.id)
   },
 
@@ -323,6 +396,7 @@ export const catalogHandlers = {
         costPrice: input.costPrice ?? null,
         taxRateBp: input.taxRateBp,
         tracksSerial: input.tracksSerial,
+        unitOfMeasure: input.unitOfMeasure,
         lowStockThreshold: input.lowStockThreshold ?? null,
         discountType: input.discountType,
         discountValue: input.discountValue,
@@ -335,6 +409,7 @@ export const catalogHandlers = {
       .insert(stockLevels)
       .values({ productId: id, locationId: 'main', quantity: 0, updatedAt: now })
       .run()
+    await emitProductUpsertEvent(db, id)
     return fetchProductById(id)
   },
 
@@ -363,6 +438,7 @@ export const catalogHandlers = {
       'costPrice',
       'taxRateBp',
       'tracksSerial',
+      'unitOfMeasure',
       'lowStockThreshold',
       'discountType',
       'discountValue',
@@ -372,6 +448,7 @@ export const catalogHandlers = {
       if (v !== undefined) (updates as Record<string, unknown>)[k] = v
     }
     await db.update(products).set(updates).where(eq(products.id, input.id)).run()
+    await emitProductUpsertEvent(db, input.id)
     return fetchProductById(input.id)
   }
 }

@@ -12,6 +12,8 @@ import { handlers } from './ipc/handlers'
 import { seedAuthIfNeeded } from './auth/seed'
 import { startFxScheduler } from './infrastructure/fx/scheduler'
 import { startBackupScheduler } from './backup/scheduler'
+import { startAgroPullScheduler } from './infrastructure/sync/agroone/scheduler'
+import { startP2p, stopP2p } from './infrastructure/sync/p2p/p2p.service'
 
 let splashWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
@@ -130,6 +132,8 @@ async function bootstrap(): Promise<void> {
 
   startFxScheduler(publish)
   startBackupScheduler()
+  startAgroPullScheduler(publish)
+  await startP2p(publish)
 
   mainWindow = createMainWindow()
   mainWindow.once('ready-to-show', () => {
@@ -155,6 +159,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  stopP2p()
   closeDb()
   if (process.platform !== 'darwin') app.quit()
 })

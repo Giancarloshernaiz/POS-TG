@@ -20,6 +20,10 @@ import { StoreProfileCard } from './StoreProfileCard'
 import { PrinterCard } from './PrinterCard'
 import { IgtfCard } from './IgtfCard'
 import { BackupCard } from './BackupCard'
+import { DeviceCard } from './DeviceCard'
+import { SyncCard } from './SyncCard'
+import { PeersCard } from './PeersCard'
+import { SerialConflictsCard } from './SerialConflictsCard'
 
 const SOURCE_LABEL: Record<string, string> = {
   api: 'API (dolarapi)',
@@ -102,9 +106,12 @@ export function SettingsScreen(): React.JSX.Element {
         </p>
       </div>
 
+      <SerialConflictsCard />
+      {canManage && <DeviceCard />}
+      {canManage && <SyncCard />}
+      {canManage && <PeersCard />}
       <StoreProfileCard />
       <PrinterCard />
-      {canManage && <BackupCard />}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -211,6 +218,8 @@ export function SettingsScreen(): React.JSX.Element {
 
         <IgtfCard />
       </div>
+
+      {canManage && <BackupCard />}
     </div>
   )
 }

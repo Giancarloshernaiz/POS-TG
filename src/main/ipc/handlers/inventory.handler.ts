@@ -4,6 +4,7 @@ import { getDb } from '@main/infrastructure/db/client'
 import { products, stockLevels, serials, categories } from '@main/infrastructure/db/schema'
 import { requirePermission } from '@main/auth/guard'
 import { adjustStock, getStock } from '@main/domain/inventory/stock.service'
+import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
 import { findSerialByImei } from '@main/domain/inventory/serial.service'
 import { getGlobalLowStock } from '@main/infrastructure/settings/settings.service'
 import { audit } from '@main/audit/logger'
@@ -110,6 +111,7 @@ export const inventoryHandlers = {
     const before = await getStock(db, input.productId)
     await adjustStock(db, input.productId, input.delta)
     const after = before + input.delta
+    emitLocalEvent('stock_level', input.productId, 'stock.adjusted', { delta: input.delta })
     await audit({
       userId: session.userId,
       action: 'inventory.adjust',

@@ -1,4 +1,4 @@
-import { and, eq, desc, sql, type SQL } from 'drizzle-orm'
+import { and, eq, desc, inArray, sql, type SQL } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import type { z } from 'zod'
 import { getDb, getRawDb } from '@main/infrastructure/db/client'
@@ -20,6 +20,9 @@ import { nextSaleNumber } from '@main/domain/purchasing/numbering'
 import { resolveDiscount, effectivePriceCents, type Discount } from '@shared/pricing'
 import { PERMISSIONS } from '@shared/auth/permissions'
 import { audit } from '@main/audit/logger'
+import { pushSale } from '@main/infrastructure/sync/agroone/push.service'
+import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
+import { getIdentity } from '@main/infrastructure/device/identity.service'
 import { salesContract } from '@shared/ipc/contracts/sales'
 import type { SaleDTO } from '@shared/ipc/contracts/sales'
 import { PAYMENT_DIVISA, PAYMENT_CURRENCY } from '@shared/payment'
@@ -119,7 +122,7 @@ export const salesHandlers = {
     let subtotal = 0
     let discountTotal = 0
     let taxTotal = 0
-    const serialIdsToSell: string[] = []
+    const serialsToSell: Array<{ id: string; imei: string }> = []
     const stockDecrements = new Map<string, number>()
 
     for (const line of input.lines) {
@@ -151,7 +154,7 @@ export const salesHandlers = {
           throw new SaleError('SERIAL_NOT_AVAILABLE', 'serial no disponible')
         }
         serialId = serial.id
-        serialIdsToSell.push(serial.id)
+        serialsToSell.push({ id: serial.id, imei: serial.imei })
       }
 
       // stock check (aggregate across lines of same product)
@@ -317,8 +320,8 @@ export const salesHandlers = {
       const updSerial = raw.prepare(
         `UPDATE serials SET status = 'sold', current_sale_id = ?, updated_at = ? WHERE id = ?`
       )
-      for (const sid of serialIdsToSell) {
-        updSerial.run(saleId, now, sid)
+      for (const s of serialsToSell) {
+        updSerial.run(saleId, now, s.id)
       }
 
       // cash movement for the session
@@ -364,6 +367,28 @@ export const salesHandlers = {
       after: { number, total, igtfTotal }
     })
 
+    // Sincroniza con AgroOne en segundo plano; la venta ya quedó persistida
+    // localmente, así que un fallo aquí no afecta la respuesta al cajero.
+    void pushSale(saleId)
+
+    // P2P (§8.4): comparte el delta de stock y la reclamación de seriales con
+    // las demás cajas de la tienda. La venta/pago en sí (hechos inmutables)
+    // no se proyecta cross-nodo todavía — referencia user/cash_session
+    // locales a este nodo; queda para una iteración futura.
+    for (const [productId, qty] of stockDecrements) {
+      emitLocalEvent('stock_level', productId, 'stock.decremented', { delta: -qty })
+    }
+    if (serialsToSell.length > 0) {
+      const identity = await getIdentity()
+      for (const s of serialsToSell) {
+        emitLocalEvent('serial', s.id, 'serial.sold', {
+          imei: s.imei,
+          saleNumber: number,
+          nodeLabel: identity.nodeLabel
+        })
+      }
+    }
+
     return { sale: await buildSaleDto(saleId), changeUsd }
   },
 
@@ -403,6 +428,18 @@ export const salesHandlers = {
     if (sale.status === 'voided') throw new SaleError('ALREADY_VOIDED', 'venta ya anulada')
 
     const lines = await db.select().from(saleLines).where(eq(saleLines.saleId, input.id)).all()
+    const soldSerialIds = lines.filter((l) => l.serialId).map((l) => l.serialId!)
+    const serialImeiById = new Map(
+      soldSerialIds.length > 0
+        ? (
+            await db
+              .select({ id: serials.id, imei: serials.imei })
+              .from(serials)
+              .where(inArray(serials.id, soldSerialIds))
+              .all()
+          ).map((s) => [s.id, s.imei] as const)
+        : []
+    )
     const payRows = await db.select().from(payments).where(eq(payments.saleId, input.id)).all()
     const creditPaid = payRows
       .filter((p) => p.method === 'credit')
@@ -477,6 +514,21 @@ export const salesHandlers = {
       targetId: input.id,
       after: { reason: input.reason }
     })
+
+    // P2P (§8.4): comparte la reversión de stock y libera los seriales para
+    // las demás cajas de la tienda.
+    const stockRestored = new Map<string, number>()
+    for (const l of lines) {
+      stockRestored.set(l.productId, (stockRestored.get(l.productId) ?? 0) + l.qty)
+    }
+    for (const [productId, qty] of stockRestored) {
+      emitLocalEvent('stock_level', productId, 'stock.adjusted', { delta: qty })
+    }
+    for (const l of lines) {
+      if (!l.serialId) continue
+      const imei = serialImeiById.get(l.serialId)
+      if (imei) emitLocalEvent('serial', l.serialId, 'serial.returned', { imei })
+    }
 
     return buildSaleDto(input.id)
   }

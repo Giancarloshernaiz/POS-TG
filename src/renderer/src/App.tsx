@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from './stores/auth'
 import { useFxInit } from './features/fx/useFxInit'
+import { useAgroSyncInit } from './features/sync/useAgroSyncInit'
 import { LoginScreen } from './features/auth/LoginScreen'
 import { ChangePasswordScreen } from './features/auth/ChangePasswordScreen'
 import { DashboardScreen } from './features/dashboard/DashboardScreen'
@@ -19,6 +20,7 @@ function App(): React.JSX.Element {
   const session = useAuth((s) => s.session)
   const [active, setActive] = useState('dashboard')
   useFxInit()
+  useAgroSyncInit()
 
   if (!session) return <LoginScreen />
   if (session.mustChangePassword) return <ChangePasswordScreen />

@@ -114,6 +114,11 @@ export function CustomersScreen(): React.JSX.Element {
                 <TableCell className="text-sm">
                   {c.phone && <div>{c.phone}</div>}
                   {c.email && <div className="text-muted-foreground">{c.email}</div>}
+                  {c.specialDiscountBp > 0 && (
+                    <Badge variant="success" className="mt-0.5">
+                      {(c.specialDiscountBp / 100).toFixed(2).replace(/\.?0+$/, '')}% desc.
+                    </Badge>
+                  )}
                 </TableCell>
                 <TableCell className="text-right">
                   {c.currentBalance > 0 ? (

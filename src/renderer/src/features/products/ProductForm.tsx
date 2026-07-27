@@ -30,6 +30,10 @@ import { MoneyInput } from '@renderer/components/MoneyInput'
 import { IVA_PRESETS } from '@shared/fiscal'
 
 const NONE = '__none__'
+const CUSTOM_UNIT = '__custom__'
+
+// Unidades comunes en AgroOne/Tiendas Gala (campo unidadMedida, texto libre allá).
+const UNIT_PRESETS = ['UNIDAD', 'KG', 'LT', 'CAJA', 'PAQUETE', 'GALON', 'METRO'] as const
 
 const schema = z.object({
   sku: z.string().min(1, 'requerido').max(64),
@@ -40,6 +44,7 @@ const schema = z.object({
   basePrice: z.number({ message: 'requerido' }).nonnegative(),
   costPrice: z.number().nonnegative().optional(),
   taxRatePct: z.number().nonnegative().max(100),
+  unitOfMeasure: z.string().min(1, 'requerido').max(20),
   lowStockThreshold: z.union([z.number().int().nonnegative(), z.nan()]).optional(),
   discountKind: z.enum(['none', 'percent', 'amount']),
   discountAmount: z.union([z.number().nonnegative(), z.nan()]).optional(),
@@ -83,6 +88,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
       basePrice: 0,
       costPrice: 0,
       taxRatePct: 16,
+      unitOfMeasure: 'UNIDAD',
       lowStockThreshold: undefined,
       discountKind: 'none',
       discountAmount: undefined,
@@ -104,6 +110,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
               basePrice: fromCents(product.basePrice),
               costPrice: fromCents(product.costPrice ?? 0),
               taxRatePct: product.taxRateBp / 100,
+              unitOfMeasure: product.unitOfMeasure,
               lowStockThreshold: product.lowStockThreshold ?? undefined,
               discountKind: product.discountType,
               discountAmount:
@@ -147,6 +154,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
         basePrice: toCents(values.basePrice),
         costPrice: values.costPrice ? toCents(values.costPrice) : null,
         taxRateBp: Math.round(values.taxRatePct * 100),
+        unitOfMeasure: values.unitOfMeasure,
         lowStockThreshold:
           values.lowStockThreshold != null && !Number.isNaN(values.lowStockThreshold)
             ? values.lowStockThreshold
@@ -191,8 +199,13 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
   const taxRatePct = watch('taxRatePct')
   const basePrice = watch('basePrice')
   const costPrice = watch('costPrice')
+  const unitOfMeasure = watch('unitOfMeasure')
   const presetTaxValues = IVA_PRESETS.map((p) => p.value / 100)
   const showCustomTax = isCustomTax || (taxRatePct != null && !presetTaxValues.includes(taxRatePct))
+  const [isCustomUnit, setIsCustomUnit] = useState(false)
+  const showCustomUnit =
+    isCustomUnit ||
+    (!!unitOfMeasure && !(UNIT_PRESETS as readonly string[]).includes(unitOfMeasure))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -345,6 +358,44 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="unitOfMeasure">Unidad de venta</Label>
+            <div className="flex gap-1">
+              <Select
+                value={showCustomUnit ? CUSTOM_UNIT : unitOfMeasure}
+                onValueChange={(v) => {
+                  if (v === CUSTOM_UNIT) {
+                    setIsCustomUnit(true)
+                  } else {
+                    setIsCustomUnit(false)
+                    setValue('unitOfMeasure', v, { shouldDirty: true })
+                  }
+                }}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {UNIT_PRESETS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM_UNIT}>Otra…</SelectItem>
+                </SelectContent>
+              </Select>
+              {showCustomUnit && (
+                <Input id="unitOfMeasure" className="w-32" {...register('unitOfMeasure')} />
+              )}
+            </div>
+            {errors.unitOfMeasure && (
+              <p className="text-xs text-destructive">{errors.unitOfMeasure.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Espejo del campo &quot;Unidad de medida&quot; en AgroOne.
+            </p>
           </div>
 
           <div className="space-y-4">

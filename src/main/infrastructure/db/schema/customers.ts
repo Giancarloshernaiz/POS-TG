@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const customers = sqliteTable(
   'customers',
@@ -12,11 +12,21 @@ export const customers = sqliteTable(
     address: text('address'),
     creditLimit: integer('credit_limit').notNull().default(0),
     currentBalance: integer('current_balance').notNull().default(0),
+    // Descuento especial del cliente en basis points (100 = 1%), espejo de
+    // Clientes.descuento_especial en AgroOne. No se aplica aún automáticamente
+    // en el pricing de venta (§ver CLAUDE memory / conversación).
+    specialDiscountBp: integer('special_discount_bp').notNull().default(0),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    agroId: integer('agro_id'),
+    lwwHlc: text('lww_hlc'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
   },
-  (t) => [index('customers_name_idx').on(t.name), index('customers_doc_idx').on(t.docType, t.docId)]
+  (t) => [
+    index('customers_name_idx').on(t.name),
+    index('customers_doc_idx').on(t.docType, t.docId),
+    uniqueIndex('customers_agro_idx').on(t.agroId)
+  ]
 )
 
 export const arMovements = sqliteTable(

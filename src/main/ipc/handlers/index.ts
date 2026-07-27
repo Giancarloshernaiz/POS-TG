@@ -10,6 +10,9 @@ import { customersHandlers } from './customers.handler'
 import { salesHandlers } from './sales.handler'
 import { printHandlers } from './print.handler'
 import { backupHandlers } from './backup.handler'
+import { deviceHandlers } from './device.handler'
+import { syncHandlers } from './sync.handler'
+import { p2pHandlers } from './p2p.handler'
 
 export const handlers = {
   health: healthHandlers,
@@ -23,5 +26,8 @@ export const handlers = {
   customers: customersHandlers,
   sales: salesHandlers,
   print: printHandlers,
-  backup: backupHandlers
+  backup: backupHandlers,
+  device: deviceHandlers,
+  sync: syncHandlers,
+  p2p: p2pHandlers
 } as const

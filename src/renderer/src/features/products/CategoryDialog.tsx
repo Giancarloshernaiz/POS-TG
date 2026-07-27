@@ -1,6 +1,24 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Pencil, X } from 'lucide-react'
+import {
+  Plus,
+  Pencil,
+  X,
+  Tag,
+  Box,
+  ShoppingBasket,
+  ShoppingBag,
+  Shirt,
+  Smartphone,
+  Tv,
+  Utensils,
+  CupSoda,
+  Wrench,
+  Home,
+  Baby,
+  Sparkles,
+  type LucideIcon
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +47,52 @@ type Props = {
 }
 
 const NO_PARENT = '__root__'
+const CUSTOM_ICON = '__custom__'
+
+// Íconos comunes para categorías de retail. Nombres de lucide-react — espejo
+// visual del campo "simbolo" de Categoria en AgroOne (ellos usan otra versión
+// de lucide, así que no todos los nombres calzan 1:1; ver CategoryIcon abajo).
+// Import explícito (no `import *`) para no meter las ~5800 íconos al bundle.
+const ICON_PRESETS = [
+  'Box',
+  'ShoppingBasket',
+  'ShoppingBag',
+  'Shirt',
+  'Smartphone',
+  'Tv',
+  'Utensils',
+  'CupSoda',
+  'Wrench',
+  'Home',
+  'Baby',
+  'Sparkles'
+] as const
+const ICON_MAP: Record<string, LucideIcon> = {
+  Box,
+  ShoppingBasket,
+  ShoppingBag,
+  Shirt,
+  Smartphone,
+  Tv,
+  Utensils,
+  CupSoda,
+  Wrench,
+  Home,
+  Baby,
+  Sparkles
+}
+
+/** Resuelve un nombre de ícono con fallback seguro (cubre nombres de AgroOne que no tengamos). */
+function CategoryIcon({
+  name,
+  className
+}: {
+  name: string | null
+  className?: string
+}): React.JSX.Element {
+  const Icon = (name && ICON_MAP[name]) || Tag
+  return <Icon className={className} />
+}
 
 type Draft = {
   id: string | null
@@ -37,6 +101,7 @@ type Draft = {
   threshold: string
   discountKind: DiscountType
   discountAmount: string
+  icon: string
 }
 
 const EMPTY: Draft = {
@@ -45,7 +110,8 @@ const EMPTY: Draft = {
   parentId: NO_PARENT,
   threshold: '',
   discountKind: 'none',
-  discountAmount: ''
+  discountAmount: '',
+  icon: ''
 }
 
 export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element {
@@ -53,12 +119,16 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
   const createMut = useCreateCategory()
   const updateMut = useUpdateCategory()
   const [draft, setDraft] = useState<Draft>(EMPTY)
+  const [isCustomIcon, setIsCustomIcon] = useState(false)
 
   const editing = draft.id !== null
+  const showCustomIcon =
+    isCustomIcon || (!!draft.icon && !(ICON_PRESETS as readonly string[]).includes(draft.icon))
   // Only root categories can be parents (single level of nesting).
   const parentOptions = categories.filter((c) => !c.parentId && c.id !== draft.id)
 
   function loadForEdit(c: CategoryDTO): void {
+    setIsCustomIcon(false)
     setDraft({
       id: c.id,
       name: c.name,
@@ -68,7 +138,8 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
       discountAmount:
         c.discountType === 'none'
           ? ''
-          : String(c.discountType === 'percent' ? c.discountValue / 100 : c.discountValue / 100)
+          : String(c.discountType === 'percent' ? c.discountValue / 100 : c.discountValue / 100),
+      icon: c.icon ?? ''
     })
   }
 
@@ -87,7 +158,8 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
       parentId: draft.parentId === NO_PARENT ? null : draft.parentId,
       lowStockThreshold: threshold,
       discountType: draft.discountKind,
-      discountValue: discountValueRaw()
+      discountValue: discountValueRaw(),
+      icon: draft.icon.trim() ? draft.icon.trim() : null
     }
     try {
       if (editing && draft.id) {
@@ -98,6 +170,7 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
         toast.success('Categoría creada')
       }
       setDraft(EMPTY)
+      setIsCustomIcon(false)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       const human: Record<string, string> = {
@@ -162,6 +235,49 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
             </div>
           </div>
 
+          <div className="space-y-1">
+            <Label className="text-xs">Ícono (espejo del &quot;símbolo&quot; en AgroOne)</Label>
+            <div className="flex items-center gap-1">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border">
+                <CategoryIcon name={draft.icon || null} className="h-4 w-4" />
+              </div>
+              <Select
+                value={showCustomIcon ? CUSTOM_ICON : draft.icon || ICON_PRESETS[0]}
+                onValueChange={(v) => {
+                  if (v === CUSTOM_ICON) {
+                    setIsCustomIcon(true)
+                  } else {
+                    setIsCustomIcon(false)
+                    setDraft((d) => ({ ...d, icon: v }))
+                  }
+                }}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ICON_PRESETS.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      <span className="flex items-center gap-2">
+                        <CategoryIcon name={name} className="h-4 w-4" />
+                        {name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM_ICON}>Otro (nombre de lucide-react)…</SelectItem>
+                </SelectContent>
+              </Select>
+              {showCustomIcon && (
+                <Input
+                  className="w-32"
+                  value={draft.icon}
+                  onChange={(e) => setDraft((d) => ({ ...d, icon: e.target.value }))}
+                  placeholder="Ej: CupSoda"
+                />
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Avisar al bajar de (unidades)</Label>
@@ -221,7 +337,14 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
               key={c.id}
               className="flex items-center justify-between gap-2 border-b px-3 py-2 last:border-0"
             >
-              <span className={c.parentId ? 'pl-4 text-sm' : 'text-sm font-medium'}>
+              <span
+                className={
+                  c.parentId
+                    ? 'flex items-center gap-1.5 pl-4 text-sm'
+                    : 'flex items-center gap-1.5 text-sm font-medium'
+                }
+              >
+                <CategoryIcon name={c.icon} className="h-3.5 w-3.5 text-muted-foreground" />
                 {c.parentId ? `└ ${c.name}` : c.name}
               </span>
               <div className="flex items-center gap-2">

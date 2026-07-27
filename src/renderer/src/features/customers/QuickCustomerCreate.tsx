@@ -67,6 +67,7 @@ export function QuickCustomerCreate({
         email: null,
         address: null,
         creditLimit: 0,
+        specialDiscountBp: 0,
         active: true
       })
       toast.success(`Cliente ${created.name} creado`)

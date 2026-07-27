@@ -12,6 +12,7 @@ const customer = z.object({
   address: z.string().nullable(),
   creditLimit: z.number(),
   currentBalance: z.number(),
+  specialDiscountBp: z.number(),
   active: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number()
@@ -25,6 +26,7 @@ const customerInput = z.object({
   email: z.string().max(200).nullable().optional(),
   address: z.string().max(300).nullable().optional(),
   creditLimit: z.number().int().nonnegative().default(0),
+  specialDiscountBp: z.number().int().min(0).max(10000).default(0),
   active: z.boolean().default(true)
 })
 

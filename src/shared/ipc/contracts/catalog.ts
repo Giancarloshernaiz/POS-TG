@@ -10,6 +10,7 @@ const category = z.object({
   lowStockThreshold: z.number().nullable(),
   discountType,
   discountValue: z.number(),
+  icon: z.string().nullable(),
   active: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number()
@@ -27,6 +28,7 @@ const product = z.object({
   costPrice: z.number().nullable(),
   taxRateBp: z.number(),
   tracksSerial: z.boolean(),
+  unitOfMeasure: z.string(),
   lowStockThreshold: z.number().nullable(),
   discountType,
   discountValue: z.number(),
@@ -51,6 +53,7 @@ const productInput = z.object({
   costPrice: z.number().int().nonnegative().nullable().optional(),
   taxRateBp: z.number().int().nonnegative().default(0),
   tracksSerial: z.boolean().default(false),
+  unitOfMeasure: z.string().min(1).max(20).default('UNIDAD'),
   lowStockThreshold: z.number().int().nonnegative().nullable().optional(),
   discountType: discountType.default('none'),
   discountValue: z.number().int().nonnegative().default(0),
@@ -73,7 +76,8 @@ export const catalogContract = {
       parentId: z.string().nullable().optional(),
       lowStockThreshold: z.number().int().nonnegative().nullable().optional(),
       discountType: discountType.optional(),
-      discountValue: z.number().int().nonnegative().optional()
+      discountValue: z.number().int().nonnegative().optional(),
+      icon: z.string().max(60).nullable().optional()
     }),
     output: category,
     errors: ['DUPLICATE_NAME', 'INVALID_PARENT'] as const
@@ -88,6 +92,7 @@ export const catalogContract = {
       lowStockThreshold: z.number().int().nonnegative().nullable().optional(),
       discountType: discountType.optional(),
       discountValue: z.number().int().nonnegative().optional(),
+      icon: z.string().max(60).nullable().optional(),
       active: z.boolean().optional()
     }),
     output: category,

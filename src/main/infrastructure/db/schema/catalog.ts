@@ -12,12 +12,19 @@ export const categories = sqliteTable(
       .default('none'),
     discountValue: integer('discount_value').notNull().default(0),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    // Nombre de ícono (lucide-react), espejo de Categoria.simbolo en AgroOne.
+    icon: text('icon'),
+    agroId: integer('agro_id'),
+    // HLC de la última escritura P2P aplicada (LWW, §8.4). Solo relevante
+    // mientras agroId es null (autoría POS); AgroOne converge lo demás.
+    lwwHlc: text('lww_hlc'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
   },
   (t) => [
     uniqueIndex('categories_name_parent_idx').on(t.parentId, t.name),
-    index('categories_parent_idx').on(t.parentId)
+    index('categories_parent_idx').on(t.parentId),
+    uniqueIndex('categories_agro_idx').on(t.agroId)
   ]
 )
 
@@ -34,12 +41,16 @@ export const products = sqliteTable(
     costPrice: integer('cost_price'),
     taxRateBp: integer('tax_rate_bp').notNull().default(0),
     tracksSerial: integer('tracks_serial', { mode: 'boolean' }).notNull().default(false),
+    // Unidad de venta, espejo de Producto.unidadMedida en AgroOne (UNIDAD, KG, LT, ...).
+    unitOfMeasure: text('unit_of_measure').notNull().default('UNIDAD'),
     lowStockThreshold: integer('low_stock_threshold'),
     discountType: text('discount_type', { enum: ['none', 'percent', 'amount'] })
       .notNull()
       .default('none'),
     discountValue: integer('discount_value').notNull().default(0),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    agroId: integer('agro_id'),
+    lwwHlc: text('lww_hlc'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
   },
@@ -47,7 +58,8 @@ export const products = sqliteTable(
     uniqueIndex('products_sku_idx').on(t.sku),
     index('products_barcode_idx').on(t.barcode),
     index('products_category_active_idx').on(t.categoryId, t.active),
-    index('products_name_idx').on(t.name)
+    index('products_name_idx').on(t.name),
+    uniqueIndex('products_agro_idx').on(t.agroId)
   ]
 )
 
@@ -83,6 +95,7 @@ export const serials = sqliteTable(
     receivedAt: integer('received_at').notNull(),
     receivedVia: text('received_via'),
     notes: text('notes'),
+    lwwHlc: text('lww_hlc'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
   },

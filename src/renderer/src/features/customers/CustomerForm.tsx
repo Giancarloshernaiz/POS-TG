@@ -37,6 +37,7 @@ const schema = z.object({
   email: z.string().max(200).optional().or(z.literal('')),
   address: z.string().max(300).optional().or(z.literal('')),
   creditLimit: z.union([z.number().nonnegative(), z.nan()]).optional(),
+  specialDiscountPct: z.union([z.number().min(0).max(100), z.nan()]).optional(),
   active: z.boolean()
 })
 
@@ -70,6 +71,7 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
       email: '',
       address: '',
       creditLimit: 0,
+      specialDiscountPct: 0,
       active: true
     }
   })
@@ -86,6 +88,7 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
               email: customer.email ?? '',
               address: customer.address ?? '',
               creditLimit: fromCents(customer.creditLimit),
+              specialDiscountPct: customer.specialDiscountBp / 100,
               active: customer.active
             }
           : undefined
@@ -109,6 +112,10 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
         creditLimit:
           values.creditLimit != null && !Number.isNaN(values.creditLimit)
             ? toCents(values.creditLimit)
+            : 0,
+        specialDiscountBp:
+          values.specialDiscountPct != null && !Number.isNaN(values.specialDiscountPct)
+            ? Math.round(values.specialDiscountPct * 100)
             : 0,
         active: values.active
       }
@@ -193,17 +200,34 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
             <Input id="address" {...register('address')} />
           </div>
 
-          <div className="space-y-2">
-            <Label>Límite de crédito</Label>
-            <MoneyInput
-              valueCents={toCents(
-                typeof creditLimit === 'number' && !Number.isNaN(creditLimit) ? creditLimit : 0
-              )}
-              onChangeCents={(c) => setValue('creditLimit', fromCents(c), { shouldDirty: true })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Monto máximo que puede deber el cliente en ventas a crédito. 0 = sin crédito.
-            </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Límite de crédito</Label>
+              <MoneyInput
+                valueCents={toCents(
+                  typeof creditLimit === 'number' && !Number.isNaN(creditLimit) ? creditLimit : 0
+                )}
+                onChangeCents={(c) => setValue('creditLimit', fromCents(c), { shouldDirty: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Monto máximo que puede deber en ventas a crédito. 0 = sin crédito.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="specialDiscountPct">Descuento especial (%)</Label>
+              <Input
+                id="specialDiscountPct"
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                {...register('specialDiscountPct', { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Espejo de &quot;Descuento especial&quot; en AgroOne. Se sincroniza; aún no se aplica
+                automático al precio en el POS.
+              </p>
+            </div>
           </div>
 
           <label className="flex cursor-pointer items-center gap-2 text-sm">

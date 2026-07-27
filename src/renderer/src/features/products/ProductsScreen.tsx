@@ -162,6 +162,9 @@ export function ProductsScreen(): React.JSX.Element {
                 </TableCell>
                 <TableCell className="text-right font-mono">{p.stock}</TableCell>
                 <TableCell className="space-x-1">
+                  {p.unitOfMeasure !== 'UNIDAD' && (
+                    <Badge variant="outline">{p.unitOfMeasure}</Badge>
+                  )}
                   {p.tracksSerial && <Badge variant="info">Serial</Badge>}
                   {!p.active && <Badge variant="secondary">Inactivo</Badge>}
                 </TableCell>

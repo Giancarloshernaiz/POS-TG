@@ -8,6 +8,8 @@ import { audit } from '@main/audit/logger'
 import { PERMISSIONS } from '@shared/auth/permissions'
 import { customersContract } from '@shared/ipc/contracts/customers'
 import type { CustomerDTO, ArMovementDTO } from '@shared/ipc/contracts/customers'
+import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
+import type { CustomerUpsertPayload } from '@main/infrastructure/sync/p2p/reducers/catalog.reducer'
 
 type Input<K extends keyof typeof customersContract> = z.infer<
   (typeof customersContract)[K]['input']
@@ -33,6 +35,7 @@ function toDto(row: typeof customers.$inferSelect): CustomerDTO {
     address: row.address,
     creditLimit: row.creditLimit,
     currentBalance: row.currentBalance,
+    specialDiscountBp: row.specialDiscountBp,
     active: row.active,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
@@ -44,6 +47,27 @@ async function fetchById(id: string): Promise<CustomerDTO> {
   const row = await db.select().from(customers).where(eq(customers.id, id)).get()
   if (!row) throw new CustomerError('NOT_FOUND', 'cliente no existe')
   return toDto(row)
+}
+
+// P2P (§8.4): comparte altas/ediciones de cliente con las demás cajas de la
+// tienda (LWW). Ver nota de emitProductUpsertEvent en catalog.handler.ts.
+async function emitCustomerUpsertEvent(db: ReturnType<typeof getDb>, id: string): Promise<void> {
+  const row = await db.select().from(customers).where(eq(customers.id, id)).get()
+  if (!row) return
+  const payload: CustomerUpsertPayload = {
+    name: row.name,
+    docType: row.docType,
+    docId: row.docId,
+    phone: row.phone,
+    email: row.email,
+    address: row.address,
+    creditLimit: row.creditLimit,
+    specialDiscountBp: row.specialDiscountBp,
+    active: row.active,
+    agroId: row.agroId
+  }
+  const env = emitLocalEvent('customer', id, 'customer.upserted', payload)
+  if (env) await db.update(customers).set({ lwwHlc: env.hlc }).where(eq(customers.id, id)).run()
 }
 
 export const customersHandlers = {
@@ -92,6 +116,7 @@ export const customersHandlers = {
         address: input.address ?? null,
         creditLimit: input.creditLimit,
         currentBalance: 0,
+        specialDiscountBp: input.specialDiscountBp,
         active: input.active,
         createdAt: now,
         updatedAt: now
@@ -103,6 +128,7 @@ export const customersHandlers = {
       targetType: 'customer',
       targetId: id
     })
+    await emitCustomerUpsertEvent(db, id)
     return fetchById(id)
   },
 
@@ -120,6 +146,7 @@ export const customersHandlers = {
       'email',
       'address',
       'creditLimit',
+      'specialDiscountBp',
       'active'
     ] as const) {
       if (input[k] !== undefined) (updates as Record<string, unknown>)[k] = input[k]
@@ -131,6 +158,7 @@ export const customersHandlers = {
       targetType: 'customer',
       targetId: input.id
     })
+    await emitCustomerUpsertEvent(db, input.id)
     return fetchById(input.id)
   },
 

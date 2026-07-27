@@ -13,6 +13,7 @@ import { requirePermission } from '@main/auth/guard'
 import { PERMISSIONS } from '@shared/auth/permissions'
 import { nextPoNumber, nextGrNumber } from '@main/domain/purchasing/numbering'
 import { audit } from '@main/audit/logger'
+import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
 import type { z } from 'zod'
 import { purchasingContract } from '@shared/ipc/contracts/purchasing'
 import type {
@@ -432,6 +433,7 @@ export const purchasingHandlers = {
     const receiptId = ulid()
     const receiptNumber = await nextGrNumber(db)
     const now = Date.now()
+    const stockReceived = new Map<string, number>()
 
     raw.exec('BEGIN IMMEDIATE')
     try {
@@ -462,6 +464,7 @@ export const purchasingHandlers = {
         insLine.run(ulid(), receiptId, recv.poLineId, r.productId, recv.qty)
         updLine.run(recv.qty, recv.poLineId)
         upsertStock.run(r.productId, recv.qty, now)
+        stockReceived.set(r.productId, (stockReceived.get(r.productId) ?? 0) + recv.qty)
         if (r.tracksSerial && recv.serials) {
           for (const imei of recv.serials) {
             insSerial.run(
@@ -508,6 +511,11 @@ export const purchasingHandlers = {
       targetId: input.poId,
       after: { receiptId, receiptNumber, lines: input.lines.length }
     })
+
+    // P2P (§8.4): comparte el ingreso de stock con las demás cajas de la tienda.
+    for (const [productId, qty] of stockReceived) {
+      emitLocalEvent('stock_level', productId, 'stock.received', { delta: qty })
+    }
 
     return {
       receiptId,

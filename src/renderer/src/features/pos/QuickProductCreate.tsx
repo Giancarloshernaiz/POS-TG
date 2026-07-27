@@ -71,6 +71,7 @@ export function QuickProductCreate({
         costPrice: costCents > 0 ? costCents : null,
         taxRateBp,
         tracksSerial,
+        unitOfMeasure: 'UNIDAD',
         discountType: 'none',
         discountValue: 0,
         active: true
