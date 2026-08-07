@@ -77,7 +77,13 @@ export async function openCashDrawer(): Promise<void> {
   await printer.execute()
 }
 
-export async function printSaleTicket(sale: SaleDTO, store: StoreProfileDTO | null): Promise<void> {
+export async function printSaleTicket(
+  sale: SaleDTO,
+  store: StoreProfileDTO | null,
+  opts?: { cajaLabel?: string; esCopia?: boolean }
+): Promise<void> {
+  const cajaLabel = opts?.cajaLabel ?? '1'
+  const esCopia = opts?.esCopia ?? false
   const cfg = await getPrinterConfig()
   const printer = build(cfg)
   const rate = sale.rateUsed
@@ -99,57 +105,147 @@ export async function printSaleTicket(sale: SaleDTO, store: StoreProfileDTO | nu
     throw new PrinterError('PRINTER_OFFLINE', `no se pudo conectar: ${msg}`)
   }
 
-  // Helper: Bs primary; falls back to USD if no rate.
-  const amount = (cents: number): string =>
+  // ---- Formato de factura, espejo del de AgroOne ------------------------
+  //
+  // La estructura y el orden replican `apps/frontend/utils/printInvoice.ts`
+  // del máster para que la factura del mostrador y la que reimprime el
+  // administrador sean la misma. Diferencia deliberada: los datos de la
+  // empresa salen del perfil de tienda en vez de estar escritos en el código,
+  // que es lo que hace AgroOne.
+  //
+  // Importes de línea en USD, igual que el máster. Los equivalentes en Bs van
+  // en el bloque de totales, según cómo se pagó.
+  const usd = (cents: number): string => (cents / 100).toFixed(2)
+  const bs = (cents: number): string =>
     rate ? (formatVes(cents, rate) ?? formatMoney(cents)) : formatMoney(cents)
 
+  // Tipo de venta, deducido de la moneda de los pagos.
+  const pagadoUsd = sale.payments
+    .filter((p) => p.currency === 'USD')
+    .reduce((acc, p) => acc + p.amountUsd, 0)
+  const pagadoVes = sale.payments
+    .filter((p) => p.currency === 'VES')
+    .reduce((acc, p) => acc + p.amountUsd, 0)
+  const tipoVenta = pagadoVes === 0 && pagadoUsd > 0 ? 'USD' : pagadoUsd === 0 && pagadoVes > 0 ? 'VES' : 'MIXTO'
+
+  // Kilos y unidades se cuentan aparte, como en el máster.
+  let totalKilos = 0
+  let totalUnidades = 0
+  for (const l of sale.lines) {
+    const u = (l.unitOfMeasure ?? '').toLowerCase()
+    if (u.includes('kg') || u.includes('kilo')) totalKilos += l.qty
+    else totalUnidades += l.qty
+  }
+
+  const fechaVenta = new Date(sale.createdAt)
+
   printer.alignCenter()
+  if (esCopia) {
+    printer.bold(true)
+    printer.println('*** COPIA ***')
+    printer.bold(false)
+  }
   printer.bold(true)
-  printer.setTextDoubleHeight()
   printer.println(store?.legalName || 'Tienda')
-  printer.setTextNormal()
+  if (store?.rif) printer.println(`Rif: ${store.rif}`)
   printer.bold(false)
-  if (store?.rif) printer.println(`RIF: ${store.rif}`)
   if (store?.address) printer.println(store.address)
-  if (store?.phone) printer.println(`Tel: ${store.phone}`)
   printer.drawLine()
 
   printer.alignLeft()
-  printer.println(`Factura: ${sale.number}`)
-  printer.println(`Fecha: ${new Date(sale.createdAt).toLocaleString()}`)
-  if (sale.customerName) printer.println(`Cliente: ${sale.customerName}`)
-  if (rate) printer.println(`Tasa BCV: ${formatVes(100, rate)}/$`)
+  printer.leftRight('Referencia Nro:', sale.number)
+  printer.leftRight('Fecha:', fechaVenta.toLocaleDateString('es-VE'))
+  printer.leftRight(
+    'Hora:',
+    fechaVenta.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
+  )
+  printer.leftRight('Caja No #:', cajaLabel)
+  printer.leftRight('Tipo de Venta:', tipoVenta)
   printer.drawLine()
 
-  for (const l of sale.lines) {
-    printer.println(`${l.qty} x ${l.description}`)
-    printer.leftRight(`  ${l.sku}`, amount(l.lineSubtotal))
-  }
+  printer.println(`Cliente: ${sale.customerName || 'Cliente General'}`)
+  const rifCliente =
+    sale.customerDocId
+      ? `${sale.customerDocType ? `${sale.customerDocType}-` : ''}${sale.customerDocId}`
+      : 'N/A'
+  printer.println(`Rif: ${rifCliente}`)
+  printer.println(`Direccion: ${sale.customerAddress || 'N/A'}`)
+  if (sale.sellerName) printer.println(`Vendedor: ${sale.sellerName}`)
   printer.drawLine()
-
-  printer.leftRight('Subtotal', amount(sale.subtotal))
-  printer.leftRight('IVA', amount(sale.taxTotal))
-  if (sale.igtfTotal > 0) printer.leftRight('IGTF (3%)', amount(sale.igtfTotal))
-  printer.bold(true)
-  printer.setTextDoubleHeight()
-  printer.leftRight('TOTAL', amount(sale.total))
-  printer.setTextNormal()
-  printer.bold(false)
-  if (rate) printer.leftRight('Equivalente USD', formatMoney(sale.total))
-  printer.drawLine()
-
-  for (const p of sale.payments) {
-    printer.leftRight(
-      PAYMENT_LABEL[p.method as PaymentMethod] ?? p.method,
-      amount(p.amountUsd)
-    )
-  }
 
   printer.alignCenter()
+  printer.bold(true)
+  printer.println('CANTIDAD DESCRIPCION PRECIO DESC TOTAL')
+  printer.bold(false)
+  printer.drawLine()
+  printer.alignLeft()
+
+  for (const l of sale.lines) {
+    // "(I)" marca el renglón como afecto, igual que en el máster.
+    printer.leftRight(l.description, '(I)')
+    const base = l.unitPrice * l.qty
+    const descPct = base > 0 ? Math.round((l.discountAmount / base) * 100) : 0
+    printer.println(
+      `${l.qty} ${l.unitOfMeasure}   ${usd(l.unitPrice)}   ${descPct > 0 ? `${descPct}%` : '-'}   ${usd(l.lineTotal)}`
+    )
+  }
+  printer.drawLine()
+
+  if (sale.discountTotal > 0) {
+    printer.leftRight('Descuento productos', `-${usd(sale.discountTotal)}`)
+    printer.drawLine()
+  }
+
+  printer.leftRight('Total Kilos', totalKilos.toFixed(2))
+  printer.leftRight('Total Unidades', String(totalUnidades))
+  printer.leftRight('Total Items', String(sale.lines.length))
+  printer.drawLine()
+
+  if (sale.payments.length > 0) {
+    printer.alignCenter()
+    printer.bold(true)
+    printer.println('METODOS DE PAGO')
+    printer.bold(false)
+    printer.alignLeft()
+    for (const p of sale.payments) {
+      const etiqueta = PAYMENT_LABEL[p.method as PaymentMethod] ?? p.method
+      const monto = p.currency === 'USD' ? `${usd(p.amountUsd)} USD` : `${bs(p.amountUsd)} VES`
+      printer.leftRight(etiqueta, monto)
+    }
+    printer.drawLine()
+  }
+
+  if (sale.igtfTotal > 0) printer.leftRight('IGTF (3%)', usd(sale.igtfTotal))
+
+  // Totales bimoneda, con la misma lógica del máster.
+  printer.bold(true)
+  if (tipoVenta === 'USD') {
+    printer.leftRight('Total Dolares', usd(sale.total))
+    printer.bold(false)
+    if (rate) printer.leftRight('Total Bolivares equivalente', bs(sale.total))
+  } else if (tipoVenta === 'VES') {
+    printer.leftRight('Total Bolivares', bs(sale.total))
+    printer.bold(false)
+    printer.leftRight('USD equivalente', usd(sale.total))
+  } else {
+    printer.println('VENTA MIXTA')
+    printer.bold(false)
+    printer.leftRight('Pagado en Dolares', usd(pagadoUsd))
+    printer.leftRight('Pagado en Bolivares', bs(pagadoVes))
+    printer.leftRight('TOTAL', usd(sale.total))
+  }
+  printer.drawLine()
+
+  printer.alignCenter()
+  printer.bold(true)
+  printer.println('Puntos De La Compra:')
+  printer.println(esCopia ? 'COPIA' : 'ORIGINAL CLIENTE')
+  printer.bold(false)
+  printer.drawLine()
   printer.newLine()
-  // No leading "¡" — extended Latin char (0xAD) gets misread as a CJK lead
-  // byte on some thermal firmware and corrupts the next character.
-  printer.println('Gracias por su compra!')
+  printer.println('FIRMA DEL CLIENTE')
+  printer.println('________________________')
+  printer.newLine()
   printer.cut()
   printer.openCashDrawer()
 

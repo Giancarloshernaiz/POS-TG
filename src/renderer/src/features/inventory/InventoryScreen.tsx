@@ -25,7 +25,6 @@ import { Textarea } from '@renderer/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@renderer/components/ui/tabs'
 import { useStock, useAdjustStock } from './hooks'
 import { useAuth } from '@renderer/stores/auth'
-import { SerialLookup } from './SerialLookup'
 import type { StockRowDTO } from '@shared/ipc/contracts/inventory'
 
 export function InventoryScreen(): React.JSX.Element {
@@ -51,7 +50,6 @@ export function InventoryScreen(): React.JSX.Element {
       <Tabs defaultValue="stock">
         <TabsList>
           <TabsTrigger value="stock">Stock</TabsTrigger>
-          <TabsTrigger value="serials">Seriales / IMEI</TabsTrigger>
         </TabsList>
 
         <TabsContent value="stock" className="space-y-4">
@@ -84,7 +82,6 @@ export function InventoryScreen(): React.JSX.Element {
                   <TableHead>Producto</TableHead>
                   <TableHead className="text-right">Stock</TableHead>
                   <TableHead className="text-right">Avisar bajo de</TableHead>
-                  <TableHead className="text-right">Seriales libres</TableHead>
                   <TableHead></TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -92,14 +89,14 @@ export function InventoryScreen(): React.JSX.Element {
               <TableBody>
                 {isLoading && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center">
+                    <TableCell colSpan={6} className="text-center">
                       <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                     </TableCell>
                   </TableRow>
                 )}
                 {!isLoading && rows?.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
                       Sin resultados.
                     </TableCell>
                   </TableRow>
@@ -112,11 +109,7 @@ export function InventoryScreen(): React.JSX.Element {
                     <TableCell className="text-right font-mono text-muted-foreground">
                       {r.effectiveThreshold}
                     </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {r.tracksSerial ? r.serialsAvailable : '—'}
-                    </TableCell>
                     <TableCell>
-                      {r.tracksSerial && <Badge variant="info">Serial</Badge>}
                       {r.quantity <= 0 && <Badge variant="destructive">Sin stock</Badge>}
                       {r.quantity > 0 && r.isLow && (
                         <Badge variant="warning">
@@ -136,10 +129,6 @@ export function InventoryScreen(): React.JSX.Element {
               </TableBody>
             </Table>
           </div>
-        </TabsContent>
-
-        <TabsContent value="serials">
-          <SerialLookup />
         </TabsContent>
       </Tabs>
 

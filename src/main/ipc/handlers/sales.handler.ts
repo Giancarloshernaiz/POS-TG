@@ -1,4 +1,4 @@
-import { and, eq, desc, inArray, sql, type SQL } from 'drizzle-orm'
+import { and, eq, desc, inArray, sql, like, or, gte, lte, type SQL } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import type { z } from 'zod'
 import { getDb, getRawDb } from '@main/infrastructure/db/client'
@@ -10,13 +10,15 @@ import {
   categories,
   serials,
   stockLevels,
-  customers
+  customers,
+  sellers,
+  syncState
 } from '@main/infrastructure/db/schema'
 import { requirePermission } from '@main/auth/guard'
 import { getActiveSession } from '@main/domain/cash/cash.service'
 import { getCurrentRate } from '@main/infrastructure/fx/fx.service'
 import { getIgtfConfig } from '@main/infrastructure/settings/settings.service'
-import { nextSaleNumber } from '@main/domain/purchasing/numbering'
+import { nextSaleNumber } from '@main/domain/sales/numbering'
 import { resolveDiscount, effectivePriceCents, type Discount } from '@shared/pricing'
 import { PERMISSIONS } from '@shared/auth/permissions'
 import { audit } from '@main/audit/logger'
@@ -56,14 +58,36 @@ type ComputedLine = {
 export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
   const db = getDb()
   const row = await db
-    .select({ s: sales, customerName: customers.name })
+    .select({
+      s: sales,
+      customerName: customers.name,
+      customerDocType: customers.docType,
+      customerDocId: customers.docId,
+      customerAddress: customers.address,
+      sellerNombre: sellers.nombre,
+      sellerApellido: sellers.apellido
+    })
     .from(sales)
     .leftJoin(customers, eq(sales.customerId, customers.id))
+    .leftJoin(sellers, eq(sales.sellerId, sellers.id))
     .where(eq(sales.id, saleId))
     .get()
   if (!row) throw new SaleError('NOT_FOUND', 'venta no existe')
 
+  // Estado de subida al máster: `LINES_DONE` es lo único que garantiza que la
+  // venta existe allá, que es lo que exigen la reimpresión y la devolución.
+  const sync = await db.select().from(syncState).where(eq(syncState.saleId, saleId)).get()
+  const syncStatus: 'synced' | 'pending' | 'error' =
+    sync?.phase === 'LINES_DONE' ? 'synced' : sync?.phase === 'ERROR' ? 'error' : 'pending'
+
   const lineRows = await db.select().from(saleLines).where(eq(saleLines.saleId, saleId)).all()
+  // La unidad vive en el producto, no en la línea: la factura separa kilos de
+  // unidades y necesita saber cuál es cuál.
+  const unidadPorProducto = new Map<string, string>()
+  for (const l of lineRows) {
+    const prod = await db.select().from(products).where(eq(products.id, l.productId)).get()
+    if (prod) unidadPorProducto.set(l.productId, prod.unitOfMeasure)
+  }
   const payRows = await db.select().from(payments).where(eq(payments.saleId, saleId)).all()
 
   return {
@@ -71,6 +95,9 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
     number: row.s.number,
     customerId: row.s.customerId,
     customerName: row.customerName ?? null,
+    customerDocType: row.customerDocType ?? null,
+    customerDocId: row.customerDocId ?? null,
+    customerAddress: row.customerAddress ?? null,
     userId: row.s.userId,
     cashSessionId: row.s.cashSessionId,
     status: row.s.status,
@@ -82,7 +109,14 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
     rateUsed: row.s.rateUsed,
     notes: row.s.notes,
     createdAt: row.s.createdAt,
+    sellerId: row.s.sellerId ?? null,
+    sellerName: row.sellerNombre
+      ? `${row.sellerNombre} ${row.sellerApellido ?? ''}`.trim()
+      : null,
+    syncStatus,
+    agroSaleId: sync?.agroSaleId ?? null,
     lines: lineRows.map((l) => ({
+      unitOfMeasure: unidadPorProducto.get(l.productId) ?? 'UNIDAD',
       id: l.id,
       productId: l.productId,
       serialId: l.serialId,
@@ -110,6 +144,21 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
 }
 
 export const salesHandlers = {
+  /** Vendedores activos de la tienda (los define AgroOne, bajan por pull). */
+  async listSellers(): Promise<
+    Array<{
+      id: string
+      agroId: number
+      nombre: string
+      apellido: string
+      cedula: string
+      active: boolean
+    }>
+  > {
+    const db = getDb()
+    return db.select().from(sellers).where(eq(sellers.active, true)).orderBy(sellers.nombre).all()
+  },
+
   async create(input: Input<'create'>): Promise<{ sale: SaleDTO; changeUsd: number }> {
     const session = requirePermission(input.sessionId, PERMISSIONS.SALES_CREATE)
     const db = getDb()
@@ -248,13 +297,14 @@ export const salesHandlers = {
     try {
       raw
         .prepare(
-          `INSERT INTO sales (id, number, customer_id, user_id, cash_session_id, status, subtotal, discount_total, tax_total, igtf_total, total, rate_used, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO sales (id, number, customer_id, seller_id, user_id, cash_session_id, status, subtotal, discount_total, tax_total, igtf_total, total, rate_used, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           saleId,
           number,
           input.customerId ?? null,
+          input.sellerId ?? null,
           session.userId,
           cashSession.id,
           subtotal,
@@ -402,10 +452,19 @@ export const salesHandlers = {
     const offset = input?.offset ?? 0
     const conds: SQL[] = []
     if (input?.cashSessionId) conds.push(eq(sales.cashSessionId, input.cashSessionId))
+    if (input?.from !== undefined) conds.push(gte(sales.createdAt, input.from))
+    if (input?.to !== undefined) conds.push(lte(sales.createdAt, input.to))
+    if (input?.search) {
+      // Por número de factura o por nombre de cliente; el join es necesario
+      // porque el nombre vive en `customers`.
+      const q = `%${input.search}%`
+      conds.push(or(like(sales.number, q), like(customers.name, q)) as SQL)
+    }
     const where = conds.length > 0 ? and(...conds) : undefined
     const rows = await db
       .select({ id: sales.id })
       .from(sales)
+      .leftJoin(customers, eq(sales.customerId, customers.id))
       .where(where)
       .orderBy(desc(sales.createdAt))
       .limit(limit)
@@ -414,6 +473,7 @@ export const salesHandlers = {
     const totalRow = await db
       .select({ c: sql<number>`COUNT(*)` })
       .from(sales)
+      .leftJoin(customers, eq(sales.customerId, customers.id))
       .where(where)
       .get()
     const items = await Promise.all(rows.map((r) => buildSaleDto(r.id)))

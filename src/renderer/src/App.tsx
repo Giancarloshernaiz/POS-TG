@@ -7,13 +7,12 @@ import { ChangePasswordScreen } from './features/auth/ChangePasswordScreen'
 import { DashboardScreen } from './features/dashboard/DashboardScreen'
 import { ProductsScreen } from './features/products/ProductsScreen'
 import { InventoryScreen } from './features/inventory/InventoryScreen'
-import { SuppliersScreen } from './features/suppliers/SuppliersScreen'
-import { PurchaseOrdersScreen } from './features/purchasing/PurchaseOrdersScreen'
 import { SettingsScreen } from './features/settings/SettingsScreen'
 import { CashScreen } from './features/cash/CashScreen'
 import { CustomersScreen } from './features/customers/CustomersScreen'
 import { POSScreen } from './features/pos/POSScreen'
 import { ReportsScreen } from './features/reports/ReportsScreen'
+import { ReceptionScreen } from './features/reception/ReceptionScreen'
 import { AppShell } from './components/layout/AppShell'
 
 function App(): React.JSX.Element {
@@ -36,12 +35,6 @@ function App(): React.JSX.Element {
     case 'inventory':
       content = <InventoryScreen />
       break
-    case 'suppliers':
-      content = <SuppliersScreen />
-      break
-    case 'purchasing':
-      content = <PurchaseOrdersScreen />
-      break
     case 'settings':
       content = <SettingsScreen />
       break
@@ -53,6 +46,9 @@ function App(): React.JSX.Element {
       break
     case 'pos':
       content = <POSScreen />
+      break
+    case 'reception':
+      content = <ReceptionScreen />
       break
     case 'reports':
       content = <ReportsScreen />

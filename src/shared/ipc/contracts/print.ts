@@ -37,7 +37,12 @@ export const printContract = {
   ticket: {
     kind: 'request',
     channel: 'print.ticket',
-    input: z.object({ sessionId: z.string(), saleId: z.string() }),
+    input: z.object({
+      sessionId: z.string(),
+      saleId: z.string(),
+      /** Reimpresión: la factura sale marcada como COPIA, igual que en AgroOne. */
+      esCopia: z.boolean().default(false)
+    }),
     output: z.object({ ok: z.literal(true) }),
     errors: [
       'NOT_AUTHENTICATED',

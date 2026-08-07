@@ -192,7 +192,6 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
     }
   }
 
-  const tracksSerial = watch('tracksSerial')
   const active = watch('active')
   const categoryId = watch('categoryId')
   const discountKind = watch('discountKind')
@@ -480,15 +479,6 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
           </div>
 
           <div className="flex items-center gap-6">
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={tracksSerial}
-                onChange={(e) => setValue('tracksSerial', e.target.checked, { shouldDirty: true })}
-                className="h-4 w-4 rounded border-input"
-              />
-              <span>Rastrea seriales / IMEI</span>
-            </label>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"

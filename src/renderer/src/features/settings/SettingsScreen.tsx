@@ -23,7 +23,6 @@ import { BackupCard } from './BackupCard'
 import { DeviceCard } from './DeviceCard'
 import { SyncCard } from './SyncCard'
 import { PeersCard } from './PeersCard'
-import { SerialConflictsCard } from './SerialConflictsCard'
 
 const SOURCE_LABEL: Record<string, string> = {
   api: 'API (dolarapi)',
@@ -106,7 +105,6 @@ export function SettingsScreen(): React.JSX.Element {
         </p>
       </div>
 
-      <SerialConflictsCard />
       {canManage && <DeviceCard />}
       {canManage && <SyncCard />}
       {canManage && <PeersCard />}

@@ -1,5 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, Trash2, Plus, X, ShoppingCart, Loader2, FlaskConical } from 'lucide-react'
+import {
+  Search,
+  Trash2,
+  Plus,
+  X,
+  ShoppingCart,
+  Loader2,
+  UserRound
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
@@ -25,9 +33,7 @@ import { useFx } from '@renderer/stores/fx'
 import { useActiveSession } from '@renderer/features/cash/hooks'
 import { OpenCashForm } from '@renderer/features/cash/OpenCashForm'
 import { useAuth } from '@renderer/stores/auth'
-import { findByCode, useCreateSale, printTicket } from './hooks'
-import { SerialPickDialog } from './SerialPickDialog'
-import { ProductPickerDialog } from './ProductPickerDialog'
+import { findByCode, useCreateSale, printTicket, useSellers } from './hooks'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
 import { QuickProductCreate } from './QuickProductCreate'
 import { formatMoney, formatVes } from '@renderer/lib/money'
@@ -36,6 +42,10 @@ import { PAYMENT_DIVISA } from '@shared/payment'
 import { useIgtf } from '@renderer/features/settings/hooks'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
+
+// Radix Select no admite value="" en un item, así que el "sin vendedor"
+// necesita un centinela.
+const NO_SELLER = '__none__'
 
 type PayEntry = { id: string; method: PaymentMethod; amountCents: number }
 
@@ -62,6 +72,10 @@ function POSContent(): React.JSX.Element {
   const authSessionId = useAuth((s) => s.session?.id ?? '')
   const { data: igtfCfg } = useIgtf()
   const createSale = useCreateSale()
+  // Comisionista de la venta. Opcional: no toda tienda trabaja con vendedores,
+  // y el selector solo aparece si el máster mandó alguno para esta tienda.
+  const { data: sellers } = useSellers()
+  const [sellerId, setSellerId] = useState<string>('')
   const searchRef = useRef<HTMLInputElement>(null)
 
   const customerReady = cart.customer !== null || cart.walkIn
@@ -81,8 +95,6 @@ function POSContent(): React.JSX.Element {
   }, [customerReady, cart])
 
   const [code, setCode] = useState('')
-  const [serialProduct, setSerialProduct] = useState<ProductDTO | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false) // TEMP bypass: manual product picker
   const [unknownCode, setUnknownCode] = useState<string | null>(null) // quick-create on unknown scan
   const [pays, setPays] = useState<PayEntry[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -111,20 +123,17 @@ function POSContent(): React.JSX.Element {
       toast.error('Producto inactivo')
       return
     }
-    if (product.tracksSerial) {
-      setSerialProduct(product)
-    } else {
-      cart.addLine({
-        productId: product.id,
-        sku: product.sku,
-        name: product.name,
-        qty: 1,
-        unitPrice: product.basePrice,
-        effectivePrice: product.effectivePrice,
-        taxRateBp: product.taxRateBp,
-        tracksSerial: false
-      })
-    }
+    // Todo se vende por unidades: el rastreo por serial/IMEI está desactivado.
+    cart.addLine({
+      productId: product.id,
+      sku: product.sku,
+      name: product.name,
+      qty: 1,
+      unitPrice: product.basePrice,
+      effectivePrice: product.effectivePrice,
+      taxRateBp: product.taxRateBp,
+      tracksSerial: false
+    })
   }
 
   async function handleCode(e: React.FormEvent): Promise<void> {
@@ -173,6 +182,7 @@ function POSContent(): React.JSX.Element {
     try {
       const res = await createSale.mutateAsync({
         customerId: cart.customer?.id ?? null,
+        sellerId: sellerId || null,
         lines: cart.lines.map((l) => ({
           productId: l.productId,
           serialId: l.serialId ?? null,
@@ -234,6 +244,26 @@ function POSContent(): React.JSX.Element {
           onReady={() => setTimeout(() => searchRef.current?.focus(), 0)}
         />
 
+        {(sellers ?? []).length > 0 && (
+          <div className="flex items-center gap-2">
+            <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Select value={sellerId || NO_SELLER} onValueChange={(v) => setSellerId(v === NO_SELLER ? '' : v)}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Vendedor (opcional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_SELLER}>Sin vendedor</SelectItem>
+                {(sellers ?? []).map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {`${v.nombre} ${v.apellido}`.trim()}
+                    {v.cedula ? ` · ${v.cedula}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <form
           onSubmit={handleCode}
           className={'flex gap-2 ' + (!customerReady ? 'pointer-events-none opacity-50' : '')}
@@ -256,17 +286,6 @@ function POSContent(): React.JSX.Element {
           <Button type="submit" disabled={!customerReady}>
             <Plus className="h-4 w-4" />
             Agregar
-          </Button>
-          {/* TEMP BYPASS: manual product picker for testing without a scanner. Remove before prod. */}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setPickerOpen(true)}
-            title="Modo prueba sin lector"
-            disabled={!customerReady}
-          >
-            <FlaskConical className="h-4 w-4" />
-            Buscar
           </Button>
         </form>
 
@@ -412,17 +431,6 @@ function POSContent(): React.JSX.Element {
         </Card>
       </div>
 
-      {/* TEMP BYPASS: manual product picker (no scanner). Remove before production. */}
-      <ProductPickerDialog
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onPick={(product) => {
-          addProduct(product)
-          setPickerOpen(false)
-          searchRef.current?.focus()
-        }}
-      />
-
       {unknownCode && (
         <QuickProductCreate
           key={unknownCode}
@@ -440,29 +448,6 @@ function POSContent(): React.JSX.Element {
           }}
         />
       )}
-
-      <SerialPickDialog
-        key={serialProduct?.id ?? 'none'}
-        product={serialProduct}
-        onClose={() => setSerialProduct(null)}
-        onPick={(serial) => {
-          if (!serialProduct) return
-          cart.addLine({
-            productId: serialProduct.id,
-            sku: serialProduct.sku,
-            name: serialProduct.name,
-            qty: 1,
-            unitPrice: serialProduct.basePrice,
-            effectivePrice: serialProduct.effectivePrice,
-            taxRateBp: serialProduct.taxRateBp,
-            tracksSerial: true,
-            serialId: serial.id,
-            serialImei: serial.imei
-          })
-          setSerialProduct(null)
-          searchRef.current?.focus()
-        }}
-      />
     </div>
   )
 }

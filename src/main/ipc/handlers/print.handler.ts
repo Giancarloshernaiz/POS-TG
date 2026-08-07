@@ -9,6 +9,7 @@ import {
   type PrinterConfig
 } from '@main/infrastructure/printer/printer.service'
 import { getSetting, SETTINGS_KEYS } from '@main/infrastructure/settings/settings.service'
+import { getIdentity } from '@main/infrastructure/device/identity.service'
 import { buildSaleDto } from './sales.handler'
 import { audit } from '@main/audit/logger'
 import { PERMISSIONS } from '@shared/auth/permissions'
@@ -46,7 +47,12 @@ export const printHandlers = {
     requireSession(input.sessionId)
     const sale = await buildSaleDto(input.saleId)
     const store = await getSetting<StoreProfileDTO>(SETTINGS_KEYS.STORE_PROFILE)
-    await printSaleTicket(sale, store)
+    // "Caja No #" sale del nombre de esta caja, no de un número fijo.
+    const identity = await getIdentity()
+    await printSaleTicket(sale, store, {
+      cajaLabel: identity.nodeLabel,
+      esCopia: input.esCopia
+    })
     return { ok: true }
   },
 

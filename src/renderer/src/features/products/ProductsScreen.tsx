@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Plus, Search, Pencil, Tag, Loader2 } from 'lucide-react'
-import { useProducts, useCategories } from './hooks'
+import { toast } from 'sonner'
+import { Plus, Search, Pencil, Tag, Loader2, Trash2 } from 'lucide-react'
+import { useProducts, useCategories, useDeleteProduct } from './hooks'
+import { useAuth } from '@renderer/stores/auth'
 import { ProductForm } from './ProductForm'
 import { CategoryDialog } from './CategoryDialog'
 import { Input } from '@renderer/components/ui/input'
@@ -21,6 +23,14 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter
+} from '@renderer/components/ui/dialog'
 import { DualPrice } from '@renderer/components/DualPrice'
 import { formatDiscountLabel } from '@shared/pricing'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
@@ -28,6 +38,22 @@ import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 const ALL = '__all__'
 
 export function ProductsScreen(): React.JSX.Element {
+  const sessionId = useAuth((st) => st.session?.id ?? '')
+  const del = useDeleteProduct()
+  const [porBorrar, setPorBorrar] = useState<ProductDTO | null>(null)
+
+  async function confirmarBaja(): Promise<void> {
+    if (!porBorrar) return
+    try {
+      const r = await del.mutateAsync({ sessionId, id: porBorrar.id })
+      toast.success(r.message)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPorBorrar(null)
+    }
+  }
+
   const [search, setSearch] = useState('')
   const [categoryId, setCategoryId] = useState<string>(ALL)
   const [activeOnly, setActiveOnly] = useState(false)
@@ -165,13 +191,22 @@ export function ProductsScreen(): React.JSX.Element {
                   {p.unitOfMeasure !== 'UNIDAD' && (
                     <Badge variant="outline">{p.unitOfMeasure}</Badge>
                   )}
-                  {p.tracksSerial && <Badge variant="info">Serial</Badge>}
                   {!p.active && <Badge variant="secondary">Inactivo</Badge>}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
+                  {p.active && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setPorBorrar(p)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -181,6 +216,32 @@ export function ProductsScreen(): React.JSX.Element {
 
       <ProductForm open={formOpen} onOpenChange={setFormOpen} product={editing} />
       <CategoryDialog open={categoryOpen} onOpenChange={setCategoryOpen} />
+
+      <Dialog open={porBorrar !== null} onOpenChange={(o) => !o && setPorBorrar(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dar de baja «{porBorrar?.name}»</DialogTitle>
+            <DialogDescription>
+              La baja se hace en AgroOne, que administra el catálogo. Si el producto nunca se
+              vendió ni se despachó, se elimina definitivamente; si tiene historial, se desactiva
+              para no perder los movimientos pasados. En ambos casos deja de aparecer en la caja.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPorBorrar(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmarBaja()}
+              disabled={del.isPending}
+            >
+              {del.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Dar de baja
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

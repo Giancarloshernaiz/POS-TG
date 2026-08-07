@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import { getDb } from '@main/infrastructure/db/client'
 import { categories, products, stockLevels } from '@main/infrastructure/db/schema/catalog'
+import { sellers } from '@main/infrastructure/db/schema/sellers'
 import { customers } from '@main/infrastructure/db/schema/customers'
 import {
   getSetting,
@@ -13,6 +14,7 @@ import {
   fetchCategories,
   fetchProductsSummary,
   fetchClients,
+  fetchSellers,
   fetchTasa,
   type AgroCategory
 } from './agro.client'
@@ -26,6 +28,9 @@ export type PullSummary = {
   products: number
   stock: number
   customers: number
+  sellers: number
+  /** Productos locales desactivados porque el máster los dio de baja. */
+  deactivated: number
   rateUpdated: boolean
   at: number
 }
@@ -40,10 +45,11 @@ function parseCedula(raw: string): { docType: DocType | null; docId: string } {
 
 export async function pullAll(baseUrl: string, storeId: number, ts: number): Promise<PullSummary> {
   // 1) Fetch todo primero (async), luego escribir en una transacción sync.
-  const [agroCats, agroProds, agroClients, tasa] = await Promise.all([
+  const [agroCats, agroProds, agroClients, agroSellers, tasa] = await Promise.all([
     fetchCategories(baseUrl),
     fetchProductsSummary(baseUrl),
     fetchClients(baseUrl),
+    fetchSellers(baseUrl, storeId),
     fetchTasa(baseUrl)
   ])
 
@@ -104,30 +110,22 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
         categoryId,
         basePrice: p.precioVentaCents,
         costPrice: p.costoPromedioCents,
+        unitOfMeasure: p.unidadMedida,
         lowStockThreshold: p.stockMinimo,
         agroId: p.agroId,
-        active: true,
+        // El máster manda sobre la baja lógica: si allá se desactivó, acá
+        // deja de ofrecerse.
+        active: p.activo,
         updatedAt: ts
       }
       let productId: string
       if (local) {
         productId = local.id
-        // unidadMedida no viene en el endpoint de resumen hoy; si algún día lo
-        // trae, se respeta — mientras tanto no pisamos lo que ya haya local.
-        tx.update(products)
-          .set(p.unidadMedida ? { ...common, unitOfMeasure: p.unidadMedida } : common)
-          .where(eq(products.id, local.id))
-          .run()
+        tx.update(products).set(common).where(eq(products.id, local.id)).run()
       } else {
         productId = ulid()
         tx.insert(products)
-          .values({
-            id: productId,
-            ...common,
-            unitOfMeasure: p.unidadMedida ?? 'UNIDAD',
-            taxRateBp: 0,
-            createdAt: ts
-          })
+          .values({ id: productId, ...common, taxRateBp: 0, createdAt: ts })
           .run()
       }
 
@@ -179,11 +177,57 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
       }
     }
 
+    // ---- Vendedores de esta tienda ----
+    for (const v of agroSellers) {
+      const local = tx.select().from(sellers).where(eq(sellers.agroId, v.agroId)).get()
+      const common = {
+        nombre: v.nombre,
+        apellido: v.apellido,
+        cedula: v.cedula,
+        active: true,
+        updatedAt: ts
+      }
+      if (local) {
+        tx.update(sellers).set(common).where(eq(sellers.id, local.id)).run()
+      } else {
+        tx.insert(sellers)
+          .values({ id: ulid(), agroId: v.agroId, ...common, createdAt: ts })
+          .run()
+      }
+    }
+    // Un vendedor que ya no viene del máster (dado de baja o movido de tienda)
+    // se desactiva: no se borra, porque hay ventas que lo referencian.
+    const vigentes = new Set(agroSellers.map((v) => v.agroId))
+    let sellersOff = 0
+    for (const row of tx.select().from(sellers).all()) {
+      if (!vigentes.has(row.agroId) && row.active) {
+        tx.update(sellers).set({ active: false, updatedAt: ts }).where(eq(sellers.id, row.id)).run()
+        sellersOff++
+      }
+    }
+    void sellersOff
+
+    // ---- Bajas de catálogo ----
+    // Un producto borrado de verdad en el máster deja de venir en el resumen.
+    // Como el upsert nunca lo tocaría, se desactiva por ausencia. Solo vale
+    // porque el pull trae el catálogo COMPLETO sin paginar: si algún día se
+    // pagina, esto hay que revisarlo o desactivaría medio catálogo.
+    const enMaster = new Set(agroProds.map((p) => p.agroId))
+    let deactivated = 0
+    for (const row of tx.select().from(products).all()) {
+      if (row.agroId !== null && !enMaster.has(row.agroId) && row.active) {
+        tx.update(products).set({ active: false, updatedAt: ts }).where(eq(products.id, row.id)).run()
+        deactivated++
+      }
+    }
+
     return {
       categories: agroCats.length,
       products: agroProds.length,
       stock: stockCount,
-      customers: agroClients.length
+      customers: agroClients.length,
+      sellers: agroSellers.length,
+      deactivated
     }
   })
 

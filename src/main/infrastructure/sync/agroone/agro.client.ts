@@ -35,6 +35,21 @@ async function getJson<T>(url: string): Promise<T> {
   }
 }
 
+/**
+ * Rechazo de negocio del máster (4xx con `error` redactado para el operador),
+ * a diferencia de un fallo de transporte. Se distingue para no disfrazar de
+ * "AgroOne no responde" un mensaje que en realidad sí vino del máster.
+ */
+export class AgroBusinessError extends Error {
+  constructor(
+    message: string,
+    public status: number
+  ) {
+    super(message)
+    this.name = 'AgroBusinessError'
+  }
+}
+
 async function sendJson<T>(
   url: string,
   method: 'POST' | 'PATCH' | 'DELETE',
@@ -43,17 +58,25 @@ async function sendJson<T>(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
   try {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body !== undefined ? JSON.stringify(body) : null,
-      signal: controller.signal
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : null,
+        signal: controller.signal
+      })
+    } catch (e) {
+      // Red caída, DNS, timeout: `fetch failed` a secas no le dice nada a nadie.
+      const msg = e instanceof Error ? e.message : String(e)
+      logger.warn({ err: e, url }, 'agro: send failed')
+      throw new AgroError('AGRO_UNREACHABLE', `AgroOne no responde (${msg})`)
+    }
     const text = await res.text()
     const data = text ? (JSON.parse(text) as T & { error?: string; message?: string }) : ({} as T)
     if (!res.ok) {
       const msg = (data as { error?: string; message?: string })?.error ?? `status ${res.status}`
-      throw new Error(msg)
+      throw new AgroBusinessError(msg, res.status)
     }
     return data
   } finally {
@@ -116,11 +139,20 @@ export type AgroProduct = {
   codigo: string // SKU
   codigoBarras: string | null
   descripcion: string | null
-  unidadMedida: string | null
+  unidadMedida: string
+  /** Baja lógica del máster: si es false, deja de ofrecerse en la caja. */
+  activo: boolean
   precioVentaCents: number
   costoPromedioCents: number
   stockMinimo: number
   existencias: Array<{ tiendaId: number; cantidad: number }>
+}
+
+export type AgroSeller = {
+  agroId: number
+  nombre: string
+  apellido: string
+  cedula: string
 }
 
 export type AgroClient = {
@@ -135,7 +167,7 @@ export type AgroClient = {
 
 export type AgroTasa = { rate: number; fecha: number | null } | null
 
-/** GET /inventory/category/ */
+/** GET /inventory/category/?flat=true — lista plana (sin flat=true devuelve un árbol anidado). */
 export async function fetchCategories(baseUrl: string): Promise<AgroCategory[]> {
   const data = await get<{
     categories?: Array<{
@@ -144,7 +176,7 @@ export async function fetchCategories(baseUrl: string): Promise<AgroCategory[]> 
       categoria_padre_id: number | null
       simbolo?: string | null
     }>
-  }>(baseUrl, '/api/v1/inventory/category/')
+  }>(baseUrl, '/api/v1/inventory/category/?flat=true')
   return (data.categories ?? []).map((c) => ({
     agroId: c.id,
     nombre: c.nombre,
@@ -153,12 +185,7 @@ export async function fetchCategories(baseUrl: string): Promise<AgroCategory[]> 
   }))
 }
 
-/**
- * GET /inventory/products/summary → catálogo + existencias por tienda.
- * NOTA: este endpoint NO incluye `unidadMedida` en su proyección actual
- * (confirmado contra AgroOne real); se deja el campo listo para cuando lo
- * agreguen o si en el futuro se cambia a `GET /inventory/products/:id`.
- */
+/** GET /inventory/products/summary → catálogo + existencias por tienda. Incluye `unidadMedida` y `descripcion`. */
 export async function fetchProductsSummary(baseUrl: string): Promise<AgroProduct[]> {
   const data = await get<{
     products?: Array<{
@@ -168,6 +195,7 @@ export async function fetchProductsSummary(baseUrl: string): Promise<AgroProduct
       codigo_barras: string | null
       descripcion?: string | null
       unidadMedida?: string | null
+      activo?: boolean
       precioVenta: unknown
       costoPromedio: unknown
       stockMinimo: unknown
@@ -182,7 +210,9 @@ export async function fetchProductsSummary(baseUrl: string): Promise<AgroProduct
     codigo: p.codigo,
     codigoBarras: p.codigo_barras ?? null,
     descripcion: p.descripcion ?? null,
-    unidadMedida: p.unidadMedida ?? null,
+    unidadMedida: p.unidadMedida?.trim() || 'UNIDAD',
+    // El máster puede no mandarlo (versión vieja): se asume activo.
+    activo: p.activo !== false,
     precioVentaCents: Math.round(num(p.precioVenta) * 100),
     costoPromedioCents: Math.round(num(p.costoPromedio) * 100),
     stockMinimo: Math.round(num(p.stockMinimo)),
@@ -193,8 +223,11 @@ export async function fetchProductsSummary(baseUrl: string): Promise<AgroProduct
   }))
 }
 
-/** GET /sales/clients/ */
-export async function fetchClients(baseUrl: string): Promise<AgroClient[]> {
+/** GET /sales/clients/ — con `cedula` filtra exacto (case-insensitive) server-side. */
+export async function fetchClients(baseUrl: string, cedula?: string): Promise<AgroClient[]> {
+  const path = cedula
+    ? `/api/v1/sales/clients/?cedula=${encodeURIComponent(cedula)}`
+    : '/api/v1/sales/clients/'
   const data = await get<{
     clients?: Array<{
       id: number
@@ -205,7 +238,7 @@ export async function fetchClients(baseUrl: string): Promise<AgroClient[]> {
       direccion: string | null
       descuento_especial: unknown
     }>
-  }>(baseUrl, '/api/v1/sales/clients/')
+  }>(baseUrl, path)
   return (data.clients ?? []).map((c) => ({
     agroId: c.id,
     nombreContacto: c.nombre_contacto,
@@ -215,6 +248,43 @@ export async function fetchClients(baseUrl: string): Promise<AgroClient[]> {
     direccion: c.direccion ?? null,
     descuentoEspecialBp: Math.round(num(c.descuento_especial) * 100)
   }))
+}
+
+/** GET /sales/vendedores/farms/:tiendaId → comisionistas de esta tienda. */
+export async function fetchSellers(baseUrl: string, tiendaId: number): Promise<AgroSeller[]> {
+  const data = await get<{
+    vendedores?: Array<{ id: number; nombre: string; apellido?: string | null; cedula?: string | null }>
+  }>(baseUrl, `/api/v1/sales/vendedores/farms/${tiendaId}`)
+  return (data.vendedores ?? []).map((v) => ({
+    agroId: v.id,
+    nombre: v.nombre,
+    apellido: v.apellido ?? '',
+    cedula: v.cedula ?? ''
+  }))
+}
+
+export type DeleteProductResult = {
+  /** `eliminado` = se borró de verdad; `desactivado` = tenía historial. */
+  modo: 'eliminado' | 'desactivado'
+  message: string
+}
+
+/**
+ * DELETE /inventory/products/:agroId → baja en el máster.
+ * El máster decide el modo: borra de verdad solo si el producto nunca se movió;
+ * si tiene ventas, despachos o existencias, lo desactiva para no destruir el
+ * historial. El POS no toma esa decisión ni la puede forzar.
+ */
+export async function deleteProductInAgro(
+  baseUrl: string,
+  agroId: number
+): Promise<DeleteProductResult> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/products/${agroId}`
+  const data = await sendJson<{ modo?: string; message?: string }>(url, 'DELETE')
+  return {
+    modo: data.modo === 'eliminado' ? 'eliminado' : 'desactivado',
+    message: data.message ?? 'Producto dado de baja'
+  }
 }
 
 /** GET /finance/tasa/latest → tasa BCV del máster (fuente única). */
@@ -230,7 +300,7 @@ export async function fetchTasa(baseUrl: string): Promise<AgroTasa> {
   return { rate, fecha: Number.isFinite(fecha as number) ? fecha : null }
 }
 
-// ---- Push de ventas (§31.7 — 2 pasos no atómicos, sin idempotencia nativa) ----
+// ---- Push de ventas (§31.7 — atómico + idempotente por idempotencyKey) ----
 
 export type SaleHeaderInput = {
   clientAgroId: number
@@ -242,21 +312,6 @@ export type SaleHeaderInput = {
   payments: Array<{ metodoPago: string; monto: number; moneda: 'USD' | 'VES' }>
 }
 
-/** POST /sales/sale/create → cabecera + pagos. NO crea líneas ni descuenta stock. */
-export async function postSaleHeader(baseUrl: string, input: SaleHeaderInput): Promise<number> {
-  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/sales/sale/create`
-  const data = await sendJson<{ sale: { id: number } }>(url, 'POST', {
-    client_id: input.clientAgroId,
-    tienda_id: input.storeId,
-    sale_date: input.saleDateIso,
-    total_amount: input.totalAmountUsd,
-    currency: input.currency,
-    vendedor_id: input.vendedorAgroId,
-    payments: input.payments
-  })
-  return data.sale.id
-}
-
 export type SaleLineInput = {
   productAgroId: number
   quantity: number
@@ -264,33 +319,405 @@ export type SaleLineInput = {
   descuentoUsd: number
 }
 
-/** GET /sales/details/sale/:id/details → guard de idempotencia antes de postear líneas. */
-export async function fetchSaleDetails(
-  baseUrl: string,
-  agroSaleId: number
-): Promise<Array<{ id: number }>> {
-  const data = await get<{ details?: Array<{ id: number }> }>(
-    baseUrl,
-    `/api/v1/sales/details/sale/${agroSaleId}/details`
-  )
-  return data.details ?? []
-}
+export type SaleFullResult = { agroSaleId: number; idempotent: boolean }
 
-/** POST /sales/details/sale/:id/batch → líneas + decremento de ExistenciaTienda. */
-export async function postSaleLines(
+/**
+ * POST /sales/sale/create-full → cabecera + líneas + descuento de ExistenciaTienda
+ * en una sola transacción atómica de AgroOne (reemplaza el viejo par create+batch,
+ * que dejaba una cabecera huérfana si el paso de líneas fallaba por falta de stock).
+ * Idempotente por `idempotencyKey`: un reintento con la misma clave devuelve la
+ * venta ya creada (`idempotent: true`) en vez de duplicarla.
+ */
+export async function postSaleFull(
   baseUrl: string,
-  agroSaleId: number,
-  lines: SaleLineInput[]
-): Promise<void> {
-  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/sales/details/sale/${agroSaleId}/batch`
-  await sendJson(url, 'POST', {
-    details: lines.map((l) => ({
+  input: SaleHeaderInput & { idempotencyKey: string; lines: SaleLineInput[] }
+): Promise<SaleFullResult> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/sales/sale/create-full`
+  const data = await sendJson<{ sale: { id: number }; idempotent?: boolean }>(url, 'POST', {
+    client_id: input.clientAgroId,
+    tienda_id: input.storeId,
+    sale_date: input.saleDateIso,
+    total_amount: input.totalAmountUsd,
+    currency: input.currency,
+    vendedor_id: input.vendedorAgroId,
+    payments: input.payments,
+    idempotency_key: input.idempotencyKey,
+    details: input.lines.map((l) => ({
       product_id: l.productAgroId,
       quantity: l.quantity,
       price: l.priceUsd,
-      descuento: l.descuentoUsd
+      // `descuento_monto` es siempre monto en USD y no admite interpretación.
+      // NO usar `descuento`: ese campo tiene heurística por rango en el máster
+      // (el frontend de AgroOne lo manda como porcentaje), así que un descuento
+      // de $0.50 se guardaba como 50% y uno de $10 como 10%.
+      descuento_monto: l.descuentoUsd
     }))
   })
+  return { agroSaleId: data.sale.id, idempotent: data.idempotent === true }
+}
+
+// ---- Recepción de despachos del Centro de Acopio ----------------------------
+//
+// El acopio despacha mercancía hacia la tienda; la caja la recibe escaneando.
+// El máster es dueño del despacho y de `ExistenciaTienda`: cada lectura suma
+// una unidad allá y la proyección local se actualiza después. Por eso la
+// recepción exige red — igual que el alta de catálogo.
+
+export type AgroDispatchLine = {
+  lineaId: number
+  productoAgroId: number
+  nombre: string
+  codigo: string
+  codigoBarras: string | null
+  unidadMedida: string | null
+  cantidad: number
+  cantidadRecibida: number
+  estado: 'POR_VALIDAR' | 'RECIBIDO' | 'NO_RECIBIDO' | 'RECIBIDO_PARCIALMENTE'
+}
+
+export type AgroDispatch = {
+  agroId: number
+  referencia: string
+  fecha: number | null
+  estado: string
+  tiendaId: number
+  lineas: AgroDispatchLine[]
+}
+
+type RawDispatch = {
+  id: number
+  despacho: string
+  fecha: string | null
+  estado: string
+  tienda_id: number
+  productos?: Array<{
+    id: number
+    producto_id: number
+    cantidad: number
+    cantidad_recibida: number
+    estado: string
+    codigo_barras: string | null
+    producto?: {
+      id: number
+      nombre: string
+      codigo: string
+      codigo_barras: string | null
+      unidadMedida?: string | null
+    } | null
+  }>
+}
+
+function toDispatch(d: RawDispatch): AgroDispatch {
+  const fecha = d.fecha ? new Date(d.fecha).getTime() : null
+  return {
+    agroId: d.id,
+    referencia: d.despacho,
+    fecha: Number.isFinite(fecha as number) ? fecha : null,
+    estado: d.estado,
+    tiendaId: d.tienda_id,
+    lineas: (d.productos ?? []).map((p) => ({
+      lineaId: p.id,
+      productoAgroId: p.producto_id,
+      nombre: p.producto?.nombre ?? `Producto ${p.producto_id}`,
+      codigo: p.producto?.codigo ?? '',
+      codigoBarras: p.producto?.codigo_barras ?? p.codigo_barras ?? null,
+      unidadMedida: p.producto?.unidadMedida ?? null,
+      cantidad: p.cantidad,
+      cantidadRecibida: p.cantidad_recibida,
+      estado: p.estado as AgroDispatchLine['estado']
+    }))
+  }
+}
+
+/**
+ * GET /inventory/dispatches/store/:tiendaId → despachos dirigidos a esta tienda.
+ * Los BORRADOR se excluyen: todavía se están armando en el acopio y no
+ * representan mercancía en camino.
+ */
+export async function fetchDispatchesForStore(
+  baseUrl: string,
+  tiendaId: number
+): Promise<AgroDispatch[]> {
+  const data = await get<{ despachos?: RawDispatch[] }>(
+    baseUrl,
+    `/api/v1/inventory/dispatches/store/${tiendaId}`
+  )
+  return (data.despachos ?? []).filter((d) => d.estado !== 'BORRADOR').map(toDispatch)
+}
+
+/** GET /inventory/dispatches/:id */
+export async function fetchDispatch(baseUrl: string, agroDispatchId: number): Promise<AgroDispatch> {
+  const data = await get<{ despacho: RawDispatch }>(
+    baseUrl,
+    `/api/v1/inventory/dispatches/${agroDispatchId}`
+  )
+  return toDispatch(data.despacho)
+}
+
+export type ReceiveScanResult = {
+  productoAgroId: number
+  nombre: string
+  recibido: number
+  despachado: number
+  pendiente: number
+  estadoLinea: string
+  estadoDespacho: string
+}
+
+/**
+ * POST /inventory/dispatches/:id/receive-scan → suma `cantidad` (default 1) a
+ * lo recibido de ese producto e incrementa ExistenciaTienda en el máster.
+ * Devuelve un error de negocio legible si el código no viene en el despacho o
+ * si se excede lo despachado.
+ */
+export async function receiveDispatchScan(
+  baseUrl: string,
+  agroDispatchId: number,
+  codigo: string,
+  cantidad = 1
+): Promise<ReceiveScanResult> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/dispatches/${agroDispatchId}/receive-scan`
+  const data = await sendJson<{
+    producto: { id: number; nombre: string }
+    recibido: number
+    despachado: number
+    pendiente: number
+    estadoLinea: string
+    estadoDespacho: string
+  }>(url, 'POST', { codigo, cantidad })
+  return {
+    productoAgroId: data.producto.id,
+    nombre: data.producto.nombre,
+    recibido: data.recibido,
+    despachado: data.despachado,
+    pendiente: data.pendiente,
+    estadoLinea: data.estadoLinea,
+    estadoDespacho: data.estadoDespacho
+  }
+}
+
+// ---- Autorizaciones: la caja pide, el administrador aprueba en AgroOne ------
+//
+// Devolución y reimpresión de factura no las decide la caja. El POS crea una
+// solicitud en el máster y espera; el administrador la aprueba o rechaza desde
+// AgroOne, que ya tiene la bandeja de pendientes. En el caso de la devolución,
+// aprobar además EJECUTA el efecto allá (repone stock, emite el crédito): la
+// caja solo lo refleja en su próximo pull.
+
+export type AuthorizationType = 'RETURN_SALE' | 'REPRINT_INVOICE'
+export type AuthorizationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export type AuthorizationRequestDTO = {
+  id: number
+  type: AuthorizationType
+  status: AuthorizationStatus
+  ventaId: number | null
+  createdAt: number | null
+  approvedAt: number | null
+}
+
+function toAuthorization(r: {
+  id: number
+  type: string
+  status: string
+  ventaId: number | null
+  createdAt?: string | null
+  approvedAt?: string | null
+}): AuthorizationRequestDTO {
+  const ms = (v?: string | null): number | null => {
+    if (!v) return null
+    const t = new Date(v).getTime()
+    return Number.isFinite(t) ? t : null
+  }
+  return {
+    id: r.id,
+    type: r.type as AuthorizationType,
+    status: r.status as AuthorizationStatus,
+    ventaId: r.ventaId,
+    createdAt: ms(r.createdAt),
+    approvedAt: ms(r.approvedAt)
+  }
+}
+
+export type AgroApprover = {
+  id: number
+  nombre: string
+  rol: string
+  email: string
+}
+
+/** GET /authorization/approvers → usuarios que pueden resolver la solicitud. */
+export async function fetchApprovers(baseUrl: string): Promise<AgroApprover[]> {
+  const data = await get<{
+    approvers?: Array<{
+      id: number
+      names: string
+      last_names: string
+      email: string
+      roles?: { name_role: string } | null
+    }>
+  }>(baseUrl, '/api/v1/authorization/approvers')
+  return (data.approvers ?? []).map((a) => ({
+    id: a.id,
+    nombre: `${a.names} ${a.last_names}`.trim(),
+    rol: a.roles?.name_role ?? '',
+    email: a.email
+  }))
+}
+
+/** POST /authorization/requests → crea la solicitud en estado PENDING. */
+export async function createAuthorizationRequest(
+  baseUrl: string,
+  input: {
+    /** A quién va dirigida. Vacío = a cualquiera que pueda atenderla. */
+    approverIds: number[]
+    /** Quién pide, en texto: la caja no tiene usuario propio en el máster. */
+    requesterLabel: string
+    ventaId: number
+    type: AuthorizationType
+    metadata: Record<string, unknown>
+  }
+): Promise<AuthorizationRequestDTO> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/authorization/requests`
+  const data = await sendJson<{ request: Parameters<typeof toAuthorization>[0] }>(url, 'POST', input)
+  return toAuthorization(data.request)
+}
+
+/** GET /authorization/requests/:id → estado actual de la solicitud. */
+export async function fetchAuthorizationRequest(
+  baseUrl: string,
+  requestId: number
+): Promise<AuthorizationRequestDTO> {
+  const data = await get<{ request: Parameters<typeof toAuthorization>[0] }>(
+    baseUrl,
+    `/api/v1/authorization/requests/${requestId}`
+  )
+  return toAuthorization(data.request)
+}
+
+// ---- Escrituras de CATÁLOGO hacia el máster (§31.4) --------------------------
+//
+// AgroOne (Centro de Acopio) es el único dueño del catálogo global: productos y
+// categorías se crean y editan allá, y vuelven por pull. El POS nunca crea una
+// fila de catálogo sin `agroId` — un producto sin mapeo hace que toda venta que
+// lo incluya quede trabada para siempre en `sync_state.phase = ERROR`.
+// Por eso estas llamadas son de red obligatoria: sin máster, no hay alta.
+
+export type AgroProductInput = {
+  codigo: string // SKU / referencia interna
+  codigoBarras: string
+  nombre: string
+  descripcion?: string | null
+  categoriaAgroId: number
+  unidadMedida: string
+  precioVentaCents: number
+  costoPromedioCents?: number | null
+  stockMinimo?: number | null
+}
+
+function toAgroProductBody(input: Partial<AgroProductInput>): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (input.codigo !== undefined) body.codigo = input.codigo
+  if (input.codigoBarras !== undefined) body.codigo_barras = input.codigoBarras
+  if (input.nombre !== undefined) body.nombre = input.nombre
+  if (input.descripcion !== undefined) body.descripcion = input.descripcion ?? undefined
+  if (input.categoriaAgroId !== undefined) body.categoriaId = input.categoriaAgroId
+  if (input.unidadMedida !== undefined) body.unidadMedida = input.unidadMedida
+  // El POS trabaja en centavos, AgroOne en unidades monetarias.
+  if (input.precioVentaCents !== undefined) body.precioVenta = input.precioVentaCents / 100
+  if (input.costoPromedioCents !== undefined && input.costoPromedioCents !== null) {
+    body.costoPromedio = input.costoPromedioCents / 100
+  }
+  if (input.stockMinimo !== undefined && input.stockMinimo !== null) body.stockMinimo = input.stockMinimo
+  return body
+}
+
+/** POST /inventory/products → alta en el máster. Devuelve el agroId asignado. */
+export async function createProductInAgro(
+  baseUrl: string,
+  input: AgroProductInput
+): Promise<{ agroId: number; codigoBarras: string }> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/products/`
+  const data = await sendJson<{ product: { id: number; codigo_barras: string } }>(
+    url,
+    'POST',
+    toAgroProductBody(input)
+  )
+  return { agroId: data.product.id, codigoBarras: data.product.codigo_barras }
+}
+
+/** PATCH /inventory/products/:agroId → edición en el máster. */
+export async function updateProductInAgro(
+  baseUrl: string,
+  agroId: number,
+  input: Partial<AgroProductInput>
+): Promise<void> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/products/${agroId}`
+  await sendJson(url, 'PATCH', toAgroProductBody(input))
+}
+
+/** POST /inventory/category → alta de categoría en el máster. */
+export async function createCategoryInAgro(
+  baseUrl: string,
+  input: { nombre: string; parentAgroId?: number | null; simbolo?: string | null }
+): Promise<number> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/category/`
+  const data = await sendJson<{ category: { id: number } }>(url, 'POST', {
+    nombre: input.nombre,
+    ...(input.parentAgroId ? { categoria_padre_id: input.parentAgroId } : {}),
+    ...(input.simbolo ? { simbolo: input.simbolo } : {})
+  })
+  return data.category.id
+}
+
+/** PATCH /inventory/category/:agroId → edición de categoría en el máster. */
+export async function updateCategoryInAgro(
+  baseUrl: string,
+  agroId: number,
+  input: { nombre?: string; parentAgroId?: number | null; simbolo?: string | null }
+): Promise<void> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/category/${agroId}`
+  const body: Record<string, unknown> = {}
+  if (input.nombre !== undefined) body.nombre = input.nombre
+  if (input.parentAgroId !== undefined && input.parentAgroId !== null) {
+    body.categoria_padre_id = input.parentAgroId
+  }
+  if (input.simbolo !== undefined && input.simbolo !== null) body.simbolo = input.simbolo
+  await sendJson(url, 'PATCH', body)
+}
+
+/**
+ * GET /inventory/products/by-code/:codigo → busca por código de barras y, si no,
+ * por referencia interna. Devuelve null si el máster no lo conoce.
+ * Se usa en la reconciliación de productos locales sin `agroId`.
+ */
+export async function findProductInAgroByCode(
+  baseUrl: string,
+  codigo: string
+): Promise<{ agroId: number; codigo: string; codigoBarras: string | null; nombre: string } | null> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/inventory/products/by-code/${encodeURIComponent(codigo)}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`status ${res.status}`)
+    const data = (await res.json()) as {
+      product: { id: number; codigo: string; codigo_barras: string | null; nombre: string }
+    }
+    return {
+      agroId: data.product.id,
+      codigo: data.product.codigo,
+      codigoBarras: data.product.codigo_barras,
+      nombre: data.product.nombre
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.warn({ err: e, url }, 'agro: by-code failed')
+    throw new AgroError('AGRO_UNREACHABLE', `AgroOne no responde (by-code): ${msg}`)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /** POST /sales/clients/ → alta de cliente en el máster. */

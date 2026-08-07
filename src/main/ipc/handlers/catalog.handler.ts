@@ -16,6 +16,14 @@ import type {
   ProductUpsertPayload,
   CategoryUpsertPayload
 } from '@main/infrastructure/sync/p2p/reducers/catalog.reducer'
+import { getIdentity, isProvisioned } from '@main/infrastructure/device/identity.service'
+import {
+  createProductInAgro,
+  updateProductInAgro,
+  createCategoryInAgro,
+  updateCategoryInAgro,
+  deleteProductInAgro
+} from '@main/infrastructure/sync/agroone/agro.client'
 
 type Input<K extends keyof typeof catalogContract> = z.infer<(typeof catalogContract)[K]['input']>
 
@@ -26,6 +34,53 @@ class CatalogError extends Error {
   ) {
     super(message)
   }
+}
+
+// ---- Catálogo: el dueño es AgroOne (Centro de Acopio), no el POS -----------
+//
+// Productos y categorías se crean/editan SIEMPRE en el máster y bajan por pull.
+// El POS no puede crear filas locales de catálogo: una fila sin `agroId` deja
+// trabada para siempre (sync_state.phase = ERROR) cualquier venta que la use,
+// porque push.service no sabe a qué producto del máster corresponde.
+// Corolario: estas operaciones exigen red. Es intencional — es la única forma
+// de que no exista catálogo divergente entre cajas y máster.
+
+/** Base URL del máster, o error accionable si la caja no está aprovisionada. */
+async function requireAgroBaseUrl(): Promise<string> {
+  const identity = await getIdentity()
+  if (!isProvisioned(identity) || !identity.agroBaseUrl) {
+    throw new CatalogError(
+      'NOT_PROVISIONED',
+      'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes antes de dar de alta productos.'
+    )
+  }
+  return identity.agroBaseUrl
+}
+
+/** Traduce un fallo del máster a un mensaje accionable para el cajero. */
+function toCatalogSyncError(err: unknown, accion: string): CatalogError {
+  if (err instanceof CatalogError) return err
+  const msg = err instanceof Error ? err.message : String(err)
+  return new CatalogError(
+    'AGRO_UNREACHABLE',
+    `No se pudo ${accion} en AgroOne (${msg}). El catálogo lo administra el Centro de Acopio: hace falta conexión.`
+  )
+}
+
+/** agroId de una categoría local; falla si todavía no está sincronizada. */
+async function requireCategoryAgroId(
+  db: ReturnType<typeof getDb>,
+  categoryId: string
+): Promise<number> {
+  const cat = await db.select().from(categories).where(eq(categories.id, categoryId)).get()
+  if (!cat) throw new CatalogError('INVALID_CATEGORY', 'la categoría no existe')
+  if (!cat.agroId) {
+    throw new CatalogError(
+      'CATEGORY_NOT_SYNCED',
+      `La categoría "${cat.name}" todavía no existe en AgroOne. Sincroniza antes de usarla.`
+    )
+  }
+  return cat.agroId
 }
 
 function toCategoryDto(
@@ -258,6 +313,21 @@ export const catalogHandlers = {
       )
       .get()
     if (dupe) throw new CatalogError('DUPLICATE_NAME', 'categoría ya existe')
+
+    // Alta en el máster primero: la fila local nace ya con su `agroId`.
+    const baseUrl = await requireAgroBaseUrl()
+    const parentAgroId = parentId ? await requireCategoryAgroId(db, parentId) : null
+    let agroId: number
+    try {
+      agroId = await createCategoryInAgro(baseUrl, {
+        nombre: input.name,
+        parentAgroId,
+        simbolo: input.icon ?? null
+      })
+    } catch (err) {
+      throw toCatalogSyncError(err, 'crear la categoría')
+    }
+
     const now = Date.now()
     const id = ulid()
     await db
@@ -270,6 +340,7 @@ export const catalogHandlers = {
         discountType: input.discountType ?? 'none',
         discountValue: input.discountValue ?? 0,
         icon: input.icon ?? null,
+        agroId,
         active: true,
         createdAt: now,
         updatedAt: now
@@ -295,6 +366,33 @@ export const catalogHandlers = {
       if (parent.parentId)
         throw new CatalogError('INVALID_PARENT', 'solo se permite un nivel de subcategoría')
     }
+    // Nombre, padre e ícono viven en el máster: se propagan allá antes de
+    // tocar la copia local, o el próximo pull revertiría el cambio.
+    const tocaMaster =
+      input.name !== undefined || input.parentId !== undefined || input.icon !== undefined
+    if (tocaMaster) {
+      if (!current.agroId) {
+        throw new CatalogError(
+          'CATEGORY_NOT_SYNCED',
+          `La categoría "${current.name}" todavía no existe en AgroOne. Sincroniza antes de editarla.`
+        )
+      }
+      const baseUrl = await requireAgroBaseUrl()
+      const parentAgroId =
+        input.parentId !== undefined && input.parentId !== null
+          ? await requireCategoryAgroId(db, input.parentId)
+          : undefined
+      try {
+        await updateCategoryInAgro(baseUrl, current.agroId, {
+          ...(input.name !== undefined ? { nombre: input.name } : {}),
+          ...(parentAgroId !== undefined ? { parentAgroId } : {}),
+          ...(input.icon !== undefined ? { simbolo: input.icon } : {})
+        })
+      } catch (err) {
+        throw toCatalogSyncError(err, 'actualizar la categoría')
+      }
+    }
+
     const updates: Partial<typeof categories.$inferInsert> = { updatedAt: Date.now() }
     if (input.name !== undefined) updates.name = input.name
     if (input.parentId !== undefined) updates.parentId = input.parentId
@@ -381,6 +479,41 @@ export const catalogHandlers = {
         .get()
       if (dupBc) throw new CatalogError('DUPLICATE_BARCODE', 'código de barras ya existe')
     }
+
+    // El producto se da de alta en AgroOne y recién después se proyecta local,
+    // ya con `agroId`. Sin esto, cualquier venta que lo incluya nunca podría
+    // sincronizarse (push.service la marcaría "producto sin mapeo AgroOne").
+    if (!input.categoryId) {
+      throw new CatalogError(
+        'CATEGORY_REQUIRED',
+        'AgroOne exige categoría para dar de alta un producto.'
+      )
+    }
+    const baseUrl = await requireAgroBaseUrl()
+    const categoriaAgroId = await requireCategoryAgroId(db, input.categoryId)
+    // AgroOne exige `codigo_barras` no vacío; si el alta vino sin código de
+    // barras (carga manual, no escaneo), se usa el SKU como código.
+    const codigoBarras = input.barcode?.trim() || input.sku
+    let agroId: number
+    let agroBarcode: string
+    try {
+      const created = await createProductInAgro(baseUrl, {
+        codigo: input.sku,
+        codigoBarras,
+        nombre: input.name,
+        descripcion: input.description ?? null,
+        categoriaAgroId,
+        unidadMedida: input.unitOfMeasure,
+        precioVentaCents: input.basePrice,
+        costoPromedioCents: input.costPrice ?? null,
+        stockMinimo: input.lowStockThreshold ?? null
+      })
+      agroId = created.agroId
+      agroBarcode = created.codigoBarras
+    } catch (err) {
+      throw toCatalogSyncError(err, 'crear el producto')
+    }
+
     const now = Date.now()
     const id = ulid()
     await db
@@ -388,18 +521,23 @@ export const catalogHandlers = {
       .values({
         id,
         sku: input.sku,
-        barcode: input.barcode ?? null,
+        // El máster es autoritativo del código de barras (puede haber asignado
+        // uno propio de la secuencia GALA_EAN13).
+        barcode: agroBarcode ?? input.barcode ?? null,
         name: input.name,
         description: input.description ?? null,
         categoryId: input.categoryId ?? null,
         basePrice: input.basePrice,
         costPrice: input.costPrice ?? null,
         taxRateBp: input.taxRateBp,
-        tracksSerial: input.tracksSerial,
+        // Rastreo por serial/IMEI desactivado: todo se maneja por unidades.
+        // Se ignora lo que mande el cliente en vez de confiar en la UI.
+        tracksSerial: false,
         unitOfMeasure: input.unitOfMeasure,
         lowStockThreshold: input.lowStockThreshold ?? null,
         discountType: input.discountType,
         discountValue: input.discountValue,
+        agroId,
         active: input.active,
         createdAt: now,
         updatedAt: now
@@ -411,6 +549,51 @@ export const catalogHandlers = {
       .run()
     await emitProductUpsertEvent(db, id)
     return fetchProductById(id)
+  },
+
+  /**
+   * Baja de producto. La pide la caja, la decide el máster: borra de verdad
+   * solo si el producto nunca se movió; si tiene historial lo desactiva.
+   * Localmente se refleja el resultado sin esperar al próximo pull.
+   */
+  async deleteProduct(
+    input: Input<'deleteProduct'>
+  ): Promise<{ modo: 'eliminado' | 'desactivado'; message: string }> {
+    const db = getDb()
+    const current = await db.select().from(products).where(eq(products.id, input.id)).get()
+    if (!current) throw new CatalogError('NOT_FOUND', 'producto no existe')
+    if (!current.agroId) {
+      throw new CatalogError(
+        'NOT_SYNCED',
+        `"${current.name}" no está sincronizado con AgroOne. Usa la reconciliación de catálogo en Ajustes.`
+      )
+    }
+
+    const baseUrl = await requireAgroBaseUrl()
+    let resultado: Awaited<ReturnType<typeof deleteProductInAgro>>
+    try {
+      resultado = await deleteProductInAgro(baseUrl, current.agroId)
+    } catch (err) {
+      throw toCatalogSyncError(err, 'dar de baja el producto')
+    }
+
+    if (resultado.modo === 'eliminado') {
+      // Ya no existe en el máster. No se borra la fila local porque hay FKs
+      // (líneas de venta históricas); se desactiva y el pull no la reactivará.
+      await db
+        .update(products)
+        .set({ active: false, agroId: null, updatedAt: Date.now() })
+        .where(eq(products.id, input.id))
+        .run()
+    } else {
+      await db
+        .update(products)
+        .set({ active: false, updatedAt: Date.now() })
+        .where(eq(products.id, input.id))
+        .run()
+    }
+    await emitProductUpsertEvent(db, input.id)
+    return resultado
   },
 
   async updateProduct(input: Input<'updateProduct'>): Promise<ProductDTO> {
@@ -427,6 +610,50 @@ export const catalogHandlers = {
       if (dup) throw new CatalogError('DUPLICATE_BARCODE', 'código de barras ya existe')
     }
 
+    // Campos que pertenecen al máster: se propagan allá ANTES de tocar la copia
+    // local, porque el próximo `pullAll` sobrescribe estos mismos campos con lo
+    // que diga AgroOne. Editarlos solo en local es un cambio que se pierde.
+    const CAMPOS_DEL_MASTER = [
+      'sku',
+      'barcode',
+      'name',
+      'description',
+      'categoryId',
+      'basePrice',
+      'costPrice',
+      'unitOfMeasure',
+      'lowStockThreshold'
+    ] as const
+    const tocaMaster = CAMPOS_DEL_MASTER.some((k) => input[k] !== undefined)
+    if (tocaMaster) {
+      if (!current.agroId) {
+        throw new CatalogError(
+          'PRODUCT_NOT_SYNCED',
+          `"${current.name}" todavía no está sincronizado con AgroOne. Usa la reconciliación de catálogo en Ajustes antes de editarlo.`
+        )
+      }
+      const baseUrl = await requireAgroBaseUrl()
+      const categoriaAgroId =
+        input.categoryId !== undefined && input.categoryId !== null
+          ? await requireCategoryAgroId(db, input.categoryId)
+          : undefined
+      try {
+        await updateProductInAgro(baseUrl, current.agroId, {
+          ...(input.sku !== undefined ? { codigo: input.sku } : {}),
+          ...(input.barcode !== undefined && input.barcode ? { codigoBarras: input.barcode } : {}),
+          ...(input.name !== undefined ? { nombre: input.name } : {}),
+          ...(input.description !== undefined ? { descripcion: input.description } : {}),
+          ...(categoriaAgroId !== undefined ? { categoriaAgroId } : {}),
+          ...(input.unitOfMeasure !== undefined ? { unidadMedida: input.unitOfMeasure } : {}),
+          ...(input.basePrice !== undefined ? { precioVentaCents: input.basePrice } : {}),
+          ...(input.costPrice !== undefined ? { costoPromedioCents: input.costPrice } : {}),
+          ...(input.lowStockThreshold !== undefined ? { stockMinimo: input.lowStockThreshold } : {})
+        })
+      } catch (err) {
+        throw toCatalogSyncError(err, 'actualizar el producto')
+      }
+    }
+
     const updates: Partial<typeof products.$inferInsert> = { updatedAt: Date.now() }
     for (const k of [
       'sku',
@@ -437,7 +664,6 @@ export const catalogHandlers = {
       'basePrice',
       'costPrice',
       'taxRateBp',
-      'tracksSerial',
       'unitOfMeasure',
       'lowStockThreshold',
       'discountType',

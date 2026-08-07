@@ -1,7 +1,7 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@renderer/lib/api'
 import { useAuth } from '@renderer/stores/auth'
-import type { SaleDTO } from '@shared/ipc/contracts/sales'
+import type { SaleDTO, SellerDTO } from '@shared/ipc/contracts/sales'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 import type { SerialDTO } from '@shared/ipc/contracts/inventory'
 
@@ -29,7 +29,7 @@ export async function searchProducts(term: string): Promise<ProductDTO[]> {
 }
 
 export async function printTicket(sessionId: string, saleId: string): Promise<void> {
-  const res = await api.print.ticket({ sessionId, saleId })
+  const res = await api.print.ticket({ sessionId, saleId, esCopia: false })
   if (!res.ok) {
     const err = new Error(res.error.message || res.error.code) as Error & { code?: string }
     err.code = res.error.code
@@ -68,6 +68,18 @@ export function useCreateSale(): ReturnType<
       void qc.invalidateQueries({ queryKey: ['cash'] })
       void qc.invalidateQueries({ queryKey: ['customers'] })
       void qc.invalidateQueries({ queryKey: ['sales'] })
+    }
+  })
+}
+
+/** Vendedores activos de la tienda, para atribuir la venta a un comisionista. */
+export function useSellers(): ReturnType<typeof useQuery<SellerDTO[]>> {
+  return useQuery({
+    queryKey: ['sellers'],
+    queryFn: async () => {
+      const res = await api.sales.listSellers({})
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data
     }
   })
 }

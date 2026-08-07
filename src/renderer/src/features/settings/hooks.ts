@@ -10,7 +10,9 @@ import type { DeviceIdentityDTO, StoreOptionDTO } from '@shared/ipc/contracts/de
 import type {
   PullSummaryDTO,
   PushStatusDTO,
-  UplinkLeaderStatusDTO
+  UplinkLeaderStatusDTO,
+  CatalogHealthDTO,
+  OrphanProductDTO
 } from '@shared/ipc/contracts/sync'
 import type { P2pStatusDTO, SerialConflictDTO } from '@shared/ipc/contracts/p2p'
 
@@ -286,6 +288,46 @@ export function useRetryPush(): ReturnType<typeof useMutation<{ retried: number 
       return res.data
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sync', 'status'] })
+  })
+}
+
+export type ReconcileCatalogResult = {
+  revisados: number
+  mapeados: Array<{ id: string; sku: string; name: string; agroId: number }>
+  fusionados: Array<{ id: string; sku: string; name: string; haciaSku: string; agroId: number }>
+  sinCorrespondencia: OrphanProductDTO[]
+  ventasReintentadas: number
+}
+
+/** Productos locales sin `agroId` y ventas que quedaron trabadas por eso. */
+export function useCatalogHealth(): ReturnType<typeof useQuery<CatalogHealthDTO>> {
+  return useQuery({
+    queryKey: ['sync', 'catalogHealth'],
+    queryFn: async () => {
+      const res = await api.sync.getCatalogHealth({})
+      if (!res.ok) throw new Error(res.error.message)
+      return res.data
+    },
+    refetchInterval: 60_000
+  })
+}
+
+export function useReconcileCatalog(): ReturnType<
+  typeof useMutation<ReconcileCatalogResult, Error, void>
+> {
+  const qc = useQueryClient()
+  const sessionId = useAuth((s) => s.session?.id ?? '')
+  return useMutation({
+    mutationFn: async () => {
+      const res = await api.sync.reconcileCatalog({ sessionId })
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['sync', 'catalogHealth'] })
+      void qc.invalidateQueries({ queryKey: ['sync', 'status'] })
+      void qc.invalidateQueries({ queryKey: ['products'] })
+    }
   })
 }
 

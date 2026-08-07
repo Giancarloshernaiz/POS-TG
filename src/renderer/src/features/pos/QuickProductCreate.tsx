@@ -20,7 +20,7 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { MoneyInput } from '@renderer/components/MoneyInput'
-import { useCreateProduct } from '@renderer/features/products/hooks'
+import { useCreateProduct, useCategories } from '@renderer/features/products/hooks'
 import { IVA_PRESETS } from '@shared/fiscal'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 
@@ -44,8 +44,11 @@ export function QuickProductCreate({
   const [priceCents, setPriceCents] = useState(0)
   const [costCents, setCostCents] = useState(0)
   const [taxRateBp, setTaxRateBp] = useState(1600)
-  const [tracksSerial, setTracksSerial] = useState(false)
+  const [categoryId, setCategoryId] = useState<string>('')
   const createMut = useCreateProduct()
+  // El alta va contra AgroOne, que exige categoría. Solo se ofrecen las que ya
+  // están sincronizadas: una categoría sin `agroId` no sirve para dar de alta.
+  const { data: categories } = useCategories()
 
   async function submit(): Promise<void> {
     if (!name.trim()) {
@@ -56,6 +59,10 @@ export function QuickProductCreate({
       toast.error('SKU requerido')
       return
     }
+    if (!categoryId) {
+      toast.error('Categoría requerida: AgroOne la exige para dar de alta el producto')
+      return
+    }
     if (priceCents <= 0) {
       toast.error('Precio debe ser mayor a 0')
       return
@@ -63,14 +70,15 @@ export function QuickProductCreate({
     try {
       const created = await createMut.mutateAsync({
         sku: sku.trim(),
-        barcode: initialCode === sku.trim() ? initialCode : sku.trim(),
+        // El código escaneado es el código de barras real del producto.
+        barcode: initialCode.trim() || sku.trim(),
         name: name.trim(),
         description: null,
-        categoryId: null,
+        categoryId,
         basePrice: priceCents,
         costPrice: costCents > 0 ? costCents : null,
         taxRateBp,
-        tracksSerial,
+        tracksSerial: false,
         unitOfMeasure: 'UNIDAD',
         discountType: 'none',
         discountValue: 0,
@@ -83,7 +91,12 @@ export function QuickProductCreate({
       const human: Record<string, string> = {
         DUPLICATE_SKU: 'SKU ya existe',
         DUPLICATE_BARCODE: 'Código de barras ya existe',
-        FORBIDDEN: 'Sin permiso para crear productos'
+        FORBIDDEN: 'Sin permiso para crear productos',
+        NOT_PROVISIONED: 'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes.',
+        CATEGORY_REQUIRED: 'AgroOne exige categoría para dar de alta un producto',
+        CATEGORY_NOT_SYNCED: 'Esa categoría aún no existe en AgroOne. Sincroniza primero.',
+        AGRO_UNREACHABLE:
+          'Sin conexión con AgroOne. El catálogo lo administra el Centro de Acopio: no se puede dar de alta sin red.'
       }
       toast.error(human[msg] ?? msg)
     }
@@ -98,8 +111,9 @@ export function QuickProductCreate({
             Producto no encontrado — crear rápido
           </DialogTitle>
           <DialogDescription>
-            Código escaneado: <span className="font-mono">{initialCode}</span>. Completa nombre y
-            precio para guardarlo y agregarlo a la venta.
+            Código escaneado: <span className="font-mono">{initialCode}</span>. El producto se da de
+            alta en AgroOne (Centro de Acopio) y luego se agrega a la venta, así que hace falta
+            conexión con el máster.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,6 +149,27 @@ export function QuickProductCreate({
           </div>
 
           <div className="space-y-2">
+            <Label>Categoría</Label>
+            <Select value={categoryId} onValueChange={setCategoryId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona una categoría" />
+              </SelectTrigger>
+              <SelectContent>
+                {(categories ?? []).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.parentName ? `${c.parentName} / ${c.name}` : c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(categories ?? []).length === 0 && (
+              <p className="text-xs text-destructive">
+                No hay categorías sincronizadas. Sincroniza con AgroOne antes de dar de alta.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
             <Label>Precio de venta</Label>
             <MoneyInput valueCents={priceCents} onChangeCents={setPriceCents} />
           </div>
@@ -160,15 +195,6 @@ export function QuickProductCreate({
             </Select>
           </div>
 
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={tracksSerial}
-              onChange={(e) => setTracksSerial(e.target.checked)}
-              className="h-4 w-4 rounded border-input"
-            />
-            Rastrea seriales / IMEI
-          </label>
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>

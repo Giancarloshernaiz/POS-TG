@@ -9,7 +9,11 @@ export const SETTINGS_KEYS = {
   IGTF: 'fiscal.igtf',
   DEVICE_IDENTITY: 'device.identity',
   AGRO_LAST_PULL: 'sync.agro.lastPull',
-  AGRO_CONSUMIDOR_FINAL: 'sync.agro.consumidorFinal'
+  AGRO_CONSUMIDOR_FINAL: 'sync.agro.consumidorFinal',
+  // Usuario de AgroOne bajo el que esta caja firma sus solicitudes de
+  // autorización. Es un usuario de máquina por caja: el nombre del cajero real
+  // viaja en `metadata`, así no hay que dar de alta a cada persona en el máster.
+  AGRO_REQUESTER_USER: 'sync.agro.requesterUserId'
 } as const
 
 export type IgtfConfig = { enabled: boolean; rateBp: number }

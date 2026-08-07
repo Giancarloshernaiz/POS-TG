@@ -6,6 +6,7 @@ import {
   payments,
   products,
   customers,
+  sellers,
   syncState
 } from '@main/infrastructure/db/schema'
 import { getIdentity, isProvisioned } from '@main/infrastructure/device/identity.service'
@@ -15,18 +16,14 @@ import {
   SETTINGS_KEYS
 } from '@main/infrastructure/settings/settings.service'
 import { logger } from '@main/logger'
-import {
-  postSaleHeader,
-  fetchSaleDetails,
-  postSaleLines,
-  createClient,
-  fetchClients
-} from './agro.client'
+import { postSaleFull, createClient, fetchClients } from './agro.client'
 import { isUplinkLeader } from './leader.service'
 
-// Push de ventas hacia AgroOne (§31.7). AgroOne crea la venta en 2 llamadas no
-// atómicas y sin idempotencia — esta máquina de estados evita duplicar la
-// cabecera o las líneas al reintentar tras un crash o una desconexión.
+// Push de ventas hacia AgroOne (§31.7). `postSaleFull` crea cabecera+líneas de
+// forma atómica en AgroOne; `idempotencyKey` (el saleId local) hace que un
+// reintento tras crash o desconexión devuelva la venta ya creada en vez de
+// duplicarla — la máquina de estados (sync_state) solo necesita distinguir
+// "ya confirmada" (LINES_DONE) de "hay que reintentar" (todo lo demás).
 
 const CONSUMIDOR_FINAL_CEDULA = 'V-00000000'
 const CONSUMIDOR_FINAL_NOMBRE = 'Consumidor Final'
@@ -38,7 +35,7 @@ async function ensureConsumidorFinal(baseUrl: string): Promise<number> {
   const cached = await getSetting<ConsumidorFinal>(SETTINGS_KEYS.AGRO_CONSUMIDOR_FINAL)
   if (cached?.agroId) return cached.agroId
 
-  const existing = await fetchClients(baseUrl)
+  const existing = await fetchClients(baseUrl, CONSUMIDOR_FINAL_CEDULA)
   const found = existing.find((c) => c.cedula === CONSUMIDOR_FINAL_CEDULA)
   if (found) {
     await setSetting<ConsumidorFinal>(SETTINGS_KEYS.AGRO_CONSUMIDOR_FINAL, { agroId: found.agroId })
@@ -129,7 +126,7 @@ export async function pushSale(saleId: string): Promise<void> {
     const sale = await db.select().from(sales).where(eq(sales.id, saleId)).get()
     if (!sale || sale.status !== 'completed') return
 
-    let state = await db.select().from(syncState).where(eq(syncState.saleId, saleId)).get()
+    const state = await db.select().from(syncState).where(eq(syncState.saleId, saleId)).get()
     if (state?.phase === 'LINES_DONE') return
 
     const lineRows = await db.select().from(saleLines).where(eq(saleLines.saleId, saleId)).all()
@@ -148,46 +145,51 @@ export async function pushSale(saleId: string): Promise<void> {
       return
     }
 
-    // ---- Paso 1: cabecera (solo si aún no existe en AgroOne) ----
-    let agroSaleId = state?.agroSaleId ?? null
-    if (!agroSaleId) {
-      const clientAgroId = await resolveClientAgroId(baseUrl, sale.customerId)
-      const payRows = await db.select().from(payments).where(eq(payments.saleId, saleId)).all()
-      const currencies = new Set(payRows.map((p) => p.currency))
-      const currency = currencies.size > 1 ? 'MIXTO' : (payRows[0]?.currency ?? 'USD')
+    const clientAgroId = await resolveClientAgroId(baseUrl, sale.customerId)
+    const payRows = await db.select().from(payments).where(eq(payments.saleId, saleId)).all()
+    const currencies = new Set(payRows.map((p) => p.currency))
+    const currency = currencies.size > 1 ? 'MIXTO' : (payRows[0]?.currency ?? 'USD')
 
-      agroSaleId = await postSaleHeader(baseUrl, {
-        clientAgroId,
-        storeId,
-        saleDateIso: new Date(sale.createdAt).toISOString(),
-        totalAmountUsd: sale.total / 100,
-        currency,
-        payments: payRows.map((p) => ({
-          metodoPago: p.method,
-          monto: p.currency === 'VES' ? (p.amountOriginal ?? p.amountUsd / 100) : p.amountUsd / 100,
-          moneda: p.currency
-        }))
-      })
-      await markState(saleId, { phase: 'HEADER_DONE', agroSaleId })
-      state = await db.select().from(syncState).where(eq(syncState.saleId, saleId)).get()
+    // Comisionista de la venta. Se omite si el vendedor no tiene mapeo con el
+    // máster: AgroOne rechazaría un `vendedor_id` que no existe allá.
+    let vendedorAgroId: number | undefined
+    if (sale.sellerId) {
+      const seller = await db.select().from(sellers).where(eq(sellers.id, sale.sellerId)).get()
+      vendedorAgroId = seller?.agroId ?? undefined
     }
 
-    // ---- Paso 2: líneas (guard de idempotencia: ¿ya existen en AgroOne?) ----
-    const already = await fetchSaleDetails(baseUrl, agroSaleId)
-    if (already.length === 0) {
-      await postSaleLines(
-        baseUrl,
-        agroSaleId,
-        lineRows.map((l) => ({
-          productAgroId: agroIdByProduct.get(l.productId)!,
-          quantity: l.qty,
-          priceUsd: l.unitPrice / 100,
-          descuentoUsd: l.discountAmount / 100
-        }))
-      )
-    }
-    await markState(saleId, { phase: 'LINES_DONE' })
-    logger.info({ saleId, agroSaleId }, 'agro: sale pushed')
+    const result = await postSaleFull(baseUrl, {
+      clientAgroId,
+      storeId,
+      saleDateIso: new Date(sale.createdAt).toISOString(),
+      totalAmountUsd: sale.total / 100,
+      currency,
+      idempotencyKey: saleId,
+      ...(vendedorAgroId !== undefined ? { vendedorAgroId } : {}),
+      payments: payRows.map((p) => ({
+        metodoPago: p.method,
+        monto: p.currency === 'VES' ? (p.amountOriginal ?? p.amountUsd / 100) : p.amountUsd / 100,
+        moneda: p.currency
+      })),
+      lines: lineRows.map((l) => ({
+        productAgroId: agroIdByProduct.get(l.productId)!,
+        quantity: l.qty,
+        priceUsd: l.unitPrice / 100,
+        // OJO: AgroOne interpreta este campo con una heurística ambigua por
+        // rango (fracción / porcentaje / monto absoluto) que no coincide con
+        // lo que mandamos acá (monto absoluto en USD siempre) — bug conocido
+        // en el contrato, pendiente de coordinar un campo explícito con
+        // AgroOne. No se detecta en la práctica porque hoy no se venden
+        // líneas con descuento > 0.
+        descuentoUsd: l.discountAmount / 100
+      }))
+    })
+
+    await markState(saleId, { phase: 'LINES_DONE', agroSaleId: result.agroSaleId })
+    logger.info(
+      { saleId, agroSaleId: result.agroSaleId, idempotent: result.idempotent },
+      'agro: sale pushed'
+    )
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     logger.warn({ err: e, saleId }, 'agro: pushSale failed, will retry')

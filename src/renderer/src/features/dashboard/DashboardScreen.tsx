@@ -22,7 +22,7 @@ export function DashboardScreen(): React.JSX.Element {
   const { data: report } = useCashReport(active?.id ?? null)
   const { data: stock } = useStock({ activeOnly: true })
   const { data: customers } = useCustomers({ withDebtOnly: true })
-  const { data: salesData } = useSales()
+  const { data: salesData } = useSales({})
 
   const today = startOfToday()
   const todaySales = (salesData?.items ?? []).filter(

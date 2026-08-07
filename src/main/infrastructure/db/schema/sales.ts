@@ -3,6 +3,7 @@ import { users } from './users'
 import { cashSessions } from './cash'
 import { customers } from './customers'
 import { products, serials } from './catalog'
+import { sellers } from './sellers'
 
 export const sales = sqliteTable(
   'sales',
@@ -10,6 +11,8 @@ export const sales = sqliteTable(
     id: text('id').primaryKey(),
     number: text('number').notNull(),
     customerId: text('customer_id').references(() => customers.id),
+    // Comisionista atribuido a la venta. Lo define AgroOne; null si no aplica.
+    sellerId: text('seller_id').references(() => sellers.id),
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
@@ -33,7 +36,8 @@ export const sales = sqliteTable(
     index('sales_session_idx').on(t.cashSessionId),
     index('sales_customer_idx').on(t.customerId),
     index('sales_created_idx').on(t.createdAt),
-    index('sales_status_idx').on(t.status)
+    index('sales_status_idx').on(t.status),
+    index('sales_seller_idx').on(t.sellerId)
   ]
 )
 

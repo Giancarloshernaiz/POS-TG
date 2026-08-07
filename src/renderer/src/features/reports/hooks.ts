@@ -3,14 +3,25 @@ import { api } from '@renderer/lib/api'
 import { useAuth } from '@renderer/stores/auth'
 import type { SaleDTO } from '@shared/ipc/contracts/sales'
 
+export type SalesFilters = {
+  cashSessionId?: string | undefined
+  search?: string | undefined
+  from?: number | undefined
+  to?: number | undefined
+}
+
 export function useSales(
-  cashSessionId?: string
+  filters: SalesFilters = {}
 ): ReturnType<typeof useQuery<{ items: SaleDTO[]; total: number }>> {
+  const { cashSessionId, search, from, to } = filters
   return useQuery({
-    queryKey: ['sales', cashSessionId ?? 'all'],
+    queryKey: ['sales', cashSessionId ?? 'all', search ?? '', from ?? 0, to ?? 0],
     queryFn: async () => {
-      const args: Parameters<typeof api.sales.list>[0] = { limit: 100, offset: 0 }
+      const args: Parameters<typeof api.sales.list>[0] = { limit: 200, offset: 0 }
       if (cashSessionId) args.cashSessionId = cashSessionId
+      if (search) args.search = search
+      if (from !== undefined) args.from = from
+      if (to !== undefined) args.to = to
       const res = await api.sales.list(args)
       if (!res.ok) throw new Error(res.error.message)
       return res.data
@@ -39,6 +50,7 @@ export function useVoidSale(): ReturnType<
 }
 
 export async function reprint(sessionId: string, saleId: string): Promise<void> {
-  const res = await api.print.ticket({ sessionId, saleId })
+  // Toda reimpresión sale marcada como COPIA: el original ya se entregó.
+  const res = await api.print.ticket({ sessionId, saleId, esCopia: true })
   if (!res.ok) throw new Error(res.error.code)
 }

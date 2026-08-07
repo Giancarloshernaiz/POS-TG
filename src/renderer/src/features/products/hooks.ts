@@ -55,6 +55,28 @@ export function useCreateProduct(): ReturnType<
   })
 }
 
+export function useDeleteProduct(): ReturnType<
+  typeof useMutation<
+    { modo: 'eliminado' | 'desactivado'; message: string },
+    Error,
+    { sessionId: string; id: string }
+  >
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input) => {
+      const res = await api.catalog.deleteProduct(input)
+      // El máster manda mensajes ya redactados; se prefieren al código seco.
+      if (!res.ok) throw new Error(res.error.message || res.error.code)
+      return res.data
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['products'] })
+      void qc.invalidateQueries({ queryKey: ['inventory'] })
+    }
+  })
+}
+
 export function useUpdateProduct(): ReturnType<
   typeof useMutation<ProductDTO, Error, Parameters<typeof api.catalog.updateProduct>[0]>
 > {

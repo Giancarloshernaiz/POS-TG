@@ -10,8 +10,7 @@ import {
   Wallet,
   LayoutDashboard,
   PackageOpen,
-  Truck,
-  ShoppingCart
+  PackageCheck
 } from 'lucide-react'
 import { useAuth } from '@renderer/stores/auth'
 import { api } from '@renderer/lib/api'
@@ -33,10 +32,16 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'cash', label: 'Caja', icon: Wallet, permission: 'cash.open' },
   { key: 'products', label: 'Productos', icon: PackageOpen, permission: 'products.view' },
   { key: 'inventory', label: 'Inventario', icon: Boxes, permission: 'inventory.view' },
-  { key: 'suppliers', label: 'Proveedores', icon: Truck, permission: 'inventory.receive' },
-  { key: 'purchasing', label: 'Compras', icon: ShoppingCart, permission: 'inventory.receive' },
+  {
+    key: 'reception',
+    label: 'Recepciones',
+    icon: PackageCheck,
+    permission: 'inventory.receive'
+  },
   { key: 'customers', label: 'Clientes', icon: Users2, permission: 'customers.view' },
-  { key: 'reports', label: 'Reportes', icon: BarChart3, permission: 'reports.sales' },
+  // Es un historial de ventas, no un tablero de reportes: se llama por lo que
+  // hace, si no nadie encuentra la reimpresión ni la devolución.
+  { key: 'reports', label: 'Historial de ventas', icon: BarChart3, permission: 'reports.sales' },
   { key: 'settings', label: 'Configuración', icon: Settings, permission: 'settings.manage' }
 ]
 

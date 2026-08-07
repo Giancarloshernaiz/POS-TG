@@ -135,6 +135,26 @@ export const catalogContract = {
     output: product,
     errors: ['DUPLICATE_SKU', 'DUPLICATE_BARCODE'] as const
   },
+  deleteProduct: {
+    kind: 'request',
+    channel: 'catalog.deleteProduct',
+    input: z.object({ sessionId: z.string(), id: z.string() }),
+    // El máster decide el modo: `eliminado` si el producto nunca se movió,
+    // `desactivado` si tiene historial que no se puede destruir.
+    output: z.object({
+      modo: z.enum(['eliminado', 'desactivado']),
+      message: z.string()
+    }),
+    errors: [
+      'NOT_AUTHENTICATED',
+      'FORBIDDEN',
+      'NOT_FOUND',
+      'NOT_SYNCED',
+      'NOT_PROVISIONED',
+      'AGRO_UNREACHABLE'
+    ] as const
+  },
+
   updateProduct: {
     kind: 'request',
     channel: 'catalog.updateProduct',

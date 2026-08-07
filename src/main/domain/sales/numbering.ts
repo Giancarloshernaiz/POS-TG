@@ -2,10 +2,14 @@ import { eq } from 'drizzle-orm'
 import { settings } from '@main/infrastructure/db/schema'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 
+// Numeración correlativa de ventas.
+//
+// Vivía en `domain/purchasing/` junto a las secuencias de órdenes de compra y
+// recepciones. Al sacar compras del POS quedó sola, y su lugar natural es
+// ventas: es lo único que numera esta caja.
+
 type Db = BetterSQLite3Database<Record<string, unknown>>
 
-const SETTINGS_KEY_PO_SEQ = 'numbering.po.sequence'
-const SETTINGS_KEY_GR_SEQ = 'numbering.gr.sequence'
 const SETTINGS_KEY_SALE_SEQ = 'numbering.sale.sequence'
 
 async function getSeq(db: Db, key: string): Promise<number> {
@@ -27,24 +31,14 @@ async function setSeq(db: Db, key: string, next: number): Promise<void> {
     .run()
 }
 
-function fmt(prefix: string, year: number, seq: number): string {
-  return `${prefix}-${year}-${String(seq).padStart(5, '0')}`
-}
-
-export async function nextPoNumber(db: Db): Promise<string> {
-  const next = (await getSeq(db, SETTINGS_KEY_PO_SEQ)) + 1
-  await setSeq(db, SETTINGS_KEY_PO_SEQ, next)
-  return fmt('PO', new Date().getFullYear(), next)
-}
-
-export async function nextGrNumber(db: Db): Promise<string> {
-  const next = (await getSeq(db, SETTINGS_KEY_GR_SEQ)) + 1
-  await setSeq(db, SETTINGS_KEY_GR_SEQ, next)
-  return fmt('GR', new Date().getFullYear(), next)
-}
-
+/**
+ * Siguiente número de venta, formato `FAC-AAAA-00001`.
+ *
+ * Ni el formato ni la clave de settings cambian: las cajas que ya operan
+ * continúan su correlativo sin saltos ni facturas con dos prefijos distintos.
+ */
 export async function nextSaleNumber(db: Db): Promise<string> {
   const next = (await getSeq(db, SETTINGS_KEY_SALE_SEQ)) + 1
   await setSeq(db, SETTINGS_KEY_SALE_SEQ, next)
-  return fmt('FAC', new Date().getFullYear(), next)
+  return `FAC-${new Date().getFullYear()}-${String(next).padStart(5, '0')}`
 }
