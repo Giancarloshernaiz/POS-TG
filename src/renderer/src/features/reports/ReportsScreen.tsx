@@ -32,6 +32,7 @@ import { ApprovalWaitDialog } from '@renderer/features/approvals/ApprovalWaitDia
 import { ReturnRequestDialog } from '@renderer/features/approvals/ReturnRequestDialog'
 import { ReprintRequestDialog } from '@renderer/features/approvals/ReprintRequestDialog'
 import type { SaleDTO } from '@shared/ipc/contracts/sales'
+import { useQueryClient } from '@tanstack/react-query'
 
 function inicioDelDia(iso: string): number {
   return new Date(`${iso}T00:00:00`).getTime()
@@ -68,6 +69,7 @@ function SyncBadge({ sale }: { sale: SaleDTO }): React.JSX.Element {
 }
 
 export function ReportsScreen(): React.JSX.Element {
+  const queryClient = useQueryClient()
   const { data: active } = useActiveSession()
   const [scope, setScope] = useState<'session' | 'all'>('session')
   const [search, setSearch] = useState('')
@@ -217,6 +219,8 @@ export function ReportsScreen(): React.JSX.Element {
               {data?.items.map((s) => {
                 const sincronizada = s.syncStatus === 'synced'
                 const anulada = s.status === 'voided'
+                const devolucionPendiente = s.returnStatus === 'pending'
+                const devuelta = s.returnStatus === 'approved'
                 return (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-xs">{s.number}</TableCell>
@@ -244,6 +248,12 @@ export function ReportsScreen(): React.JSX.Element {
                       <div>
                         <SyncBadge sale={s} />
                       </div>
+                      {devolucionPendiente && (
+                        <div><Badge variant="outline">Devolución pendiente</Badge></div>
+                      )}
+                      {devuelta && (
+                        <div><Badge variant="secondary">Devuelta</Badge></div>
+                      )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
                       <Button
@@ -265,9 +275,13 @@ export function ReportsScreen(): React.JSX.Element {
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={!sincronizada}
+                          disabled={!sincronizada || devolucionPendiente || devuelta}
                           title={
-                            sincronizada
+                            devuelta
+                              ? 'Esta venta ya fue devuelta'
+                              : devolucionPendiente
+                                ? 'Esta venta ya tiene una devolución pendiente'
+                                : sincronizada
                               ? 'Solicitar devolución'
                               : 'Sincroniza la venta con AgroOne para poder devolver'
                           }
@@ -276,7 +290,7 @@ export function ReportsScreen(): React.JSX.Element {
                           <Undo2 className="mr-1 h-4 w-4" /> Devolver
                         </Button>
                       )}
-                      {canVoid && !anulada && (
+                      {canVoid && !anulada && !devolucionPendiente && !devuelta && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -331,6 +345,7 @@ export function ReportsScreen(): React.JSX.Element {
             void imprimirAprobada(espera.saleId)
           } else {
             toast.success('Devolución aprobada. Se aplicará en el próximo sincronizado.')
+            void queryClient.invalidateQueries({ queryKey: ['sales'] })
           }
         }}
         onClose={() => setEspera(null)}

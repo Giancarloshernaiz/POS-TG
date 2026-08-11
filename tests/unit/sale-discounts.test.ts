@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   amountToCompleteSaleCents,
+  paidShareForReturnCents,
   totalAfterUsdDiscountCents,
   usdPaymentDiscountCents
 } from '../../src/shared/sale-discounts'
@@ -43,5 +44,10 @@ describe('descuentos por pago USD', () => {
       { amountCents: 0, currency: 'USD' as const }
     ]
     expect(amountToCompleteSaleCents(10_000, payments, 1, 1_000)).toBe(7_000)
+  })
+
+  it('devuelve el total exacto pagado, no el valor previo al descuento global', () => {
+    expect(paidShareForReturnCents(10_000, 10_000, 9_000)).toBe(9_000)
+    expect(paidShareForReturnCents(2_500, 10_000, 9_000)).toBe(2_250)
   })
 })

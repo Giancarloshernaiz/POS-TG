@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@renderer/lib/api'
 import { useAuth } from '@renderer/stores/auth'
 import type { AuthorizationDTO, ApproverDTO } from '@shared/ipc/contracts/approvals'
@@ -12,7 +12,9 @@ export const APPROVAL_ERRORS: Record<string, string> = {
     'Esta venta todavía no llegó a AgroOne. Sincroniza desde Ajustes y volvé a intentar.',
   SALE_NOT_FOUND: 'La venta no existe',
   AGRO_UNREACHABLE: 'AgroOne no responde. Revisa la conexión.',
-  FORBIDDEN: 'Sin permiso'
+  FORBIDDEN: 'Sin permiso',
+  RETURN_ALREADY_REQUESTED: 'Esta venta ya tiene una devolución pendiente de aprobación.',
+  RETURN_ALREADY_COMPLETED: 'Esta venta ya fue devuelta.'
 }
 
 export function approvalMessage(e: unknown): string {
@@ -54,12 +56,16 @@ export function useRequestReturn(): ReturnType<
   >
 > {
   const sessionId = useAuth((s) => s.session?.id ?? '')
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ saleId, approverIds, items }) => {
       const res = await api.approvals.requestReturn({ sessionId, saleId, approverIds, items })
       // INVALID_ITEMS trae un mensaje concreto ("se vendieron 2"): se prefiere.
       if (!res.ok) throw new Error(res.error.message || res.error.code)
       return res.data
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sales'] })
     }
   })
 }

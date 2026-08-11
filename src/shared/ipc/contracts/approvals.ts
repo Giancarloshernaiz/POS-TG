@@ -27,7 +27,9 @@ const errores = [
   'SALE_NOT_FOUND',
   'SALE_NOT_SYNCED',
   'AGRO_UNREACHABLE',
-  'INVALID_ITEMS'
+  'INVALID_ITEMS',
+  'RETURN_ALREADY_REQUESTED',
+  'RETURN_ALREADY_COMPLETED'
 ] as const
 
 export const approvalsContract = {

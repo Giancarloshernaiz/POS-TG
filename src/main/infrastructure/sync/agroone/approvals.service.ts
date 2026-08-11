@@ -14,6 +14,7 @@ import {
   type AuthorizationRequestDTO,
   type AuthorizationType
 } from './agro.client'
+import { paidShareForReturnCents } from '@shared/sale-discounts'
 
 // Devolución y reimpresión de factura: la caja SOLICITA, el administrador
 // aprueba en AgroOne.
@@ -31,7 +32,9 @@ export class ApprovalError extends Error {
       | 'SALE_NOT_FOUND'
       | 'SALE_NOT_SYNCED'
       | 'AGRO_UNREACHABLE'
-      | 'INVALID_ITEMS',
+      | 'INVALID_ITEMS'
+      | 'RETURN_ALREADY_REQUESTED'
+      | 'RETURN_ALREADY_COMPLETED',
     message: string
   ) {
     super(message)
@@ -139,6 +142,13 @@ export async function requestReturn(
   if (items.length === 0) throw new ApprovalError('INVALID_ITEMS', 'No se indicó qué devolver')
 
   const db = getDb()
+  const localSale = await db.select().from(sales).where(eq(sales.id, saleId)).get()
+  if (localSale?.returnStatus === 'pending') {
+    throw new ApprovalError('RETURN_ALREADY_REQUESTED', 'Esta venta ya tiene una devolución pendiente')
+  }
+  if (localSale?.returnStatus === 'approved') {
+    throw new ApprovalError('RETURN_ALREADY_COMPLETED', 'Esta venta ya fue devuelta')
+  }
   const lineas = await db.select().from(saleLines).where(eq(saleLines.saleId, saleId)).all()
   const porProducto = new Map(lineas.map((l) => [l.productId, l]))
 
@@ -162,30 +172,77 @@ export async function requestReturn(
     mapeados.push({ product_id: prod.agroId, quantity: item.qty })
   }
 
-  const sale = await db.select().from(sales).where(eq(sales.id, saleId)).get()
+  const sale = localSale
   let clienteAgroId: number | undefined
   if (sale?.customerId) {
     const cust = await db.select().from(customers).where(eq(customers.id, sale.customerId)).get()
     clienteAgroId = cust?.agroId ?? undefined
   }
 
-  return crear('RETURN_SALE', saleId, cajero, approverIds, {
-    items: mapeados,
-    ...(clienteAgroId ? { cliente_id: clienteAgroId } : {}),
-    // El administrador lo ve en su bandeja antes de aprobar.
-    totalDevolucion:
-      items.reduce((sum, i) => {
-        const l = porProducto.get(i.productId)
-        return sum + (l ? (l.lineTotal / l.qty) * i.qty : 0)
-      }, 0) / 100
-  })
+  try {
+    const request = await crear('RETURN_SALE', saleId, cajero, approverIds, {
+      items: mapeados,
+      ...(clienteAgroId ? { cliente_id: clienteAgroId } : {}),
+      // El administrador lo ve en su bandeja antes de aprobar.
+      totalDevolucion: (() => {
+        const lineTotal = items.reduce((sum, i) => {
+          const l = porProducto.get(i.productId)
+          return sum + (l ? (l.lineTotal / l.qty) * i.qty : 0)
+        }, 0)
+        return sale
+          ? paidShareForReturnCents(lineTotal, sale.subtotal, sale.total) / 100
+          : lineTotal / 100
+      })()
+    })
+    await db
+      .update(sales)
+      .set({ returnStatus: 'pending', returnRequestId: request.id })
+      .where(eq(sales.id, saleId))
+      .run()
+    return request
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('RETURN_ALREADY_COMPLETED')) {
+      await db.update(sales).set({ returnStatus: 'approved' }).where(eq(sales.id, saleId)).run()
+      throw new ApprovalError('RETURN_ALREADY_COMPLETED', 'Esta venta ya fue devuelta')
+    }
+    if (message.includes('RETURN_ALREADY_REQUESTED')) {
+      await db.update(sales).set({ returnStatus: 'pending' }).where(eq(sales.id, saleId)).run()
+      throw new ApprovalError('RETURN_ALREADY_REQUESTED', 'Esta venta ya tiene una devolución pendiente')
+    }
+    throw error
+  }
 }
 
 /** Estado actual de una solicitud, para que la caja sepa si ya se resolvió. */
 export async function getApprovalStatus(requestId: number): Promise<AuthorizationRequestDTO> {
   const baseUrl = await requireBaseUrl()
   try {
-    return await fetchAuthorizationRequest(baseUrl, requestId)
+    const request = await fetchAuthorizationRequest(baseUrl, requestId)
+    if (request.type === 'RETURN_SALE' && request.ventaId) {
+      const db = getDb()
+      const synced = await db
+        .select({ saleId: syncState.saleId })
+        .from(syncState)
+        .where(eq(syncState.agroSaleId, request.ventaId))
+        .get()
+      if (synced) {
+        await db
+          .update(sales)
+          .set({
+            returnStatus:
+              request.status === 'APPROVED'
+                ? 'approved'
+                : request.status === 'REJECTED'
+                  ? 'rejected'
+                  : 'pending',
+            returnRequestId: request.id
+          })
+          .where(eq(sales.id, synced.saleId))
+          .run()
+      }
+    }
+    return request
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw new ApprovalError('AGRO_UNREACHABLE', `No se pudo consultar la solicitud: ${msg}`)

@@ -242,6 +242,15 @@ export async function fetchDescuentoDivisa(baseUrl: string): Promise<number> {
   return Math.max(0, Math.round(num(raw) * 100))
 }
 
+/** Ventas del maestro que ya tienen una devolución completada. */
+export async function fetchReturnedSaleIds(baseUrl: string): Promise<number[]> {
+  const data = await get<{ saleIds?: unknown[] }>(
+    baseUrl,
+    '/api/v1/sales/returns/completed-sale-ids'
+  )
+  return (data.saleIds ?? []).map((id) => Math.round(num(id))).filter((id) => id > 0)
+}
+
 /** GET /sales/clients/ — con `cedula` filtra exacto (case-insensitive) server-side. */
 export async function fetchClients(baseUrl: string, cedula?: string): Promise<AgroClient[]> {
   const path = cedula

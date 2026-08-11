@@ -56,3 +56,15 @@ export function amountToCompleteSaleCents(
   const discount = Math.round((otherUsd * rateBp) / 10_000)
   return Math.max(0, goodsTotalCents - discount - otherPaid)
 }
+
+/** Prorratea sobre una selección el importe neto que realmente se cobró. */
+export function paidShareForReturnCents(
+  selectedNetCents: number,
+  saleProductsNetCents: number,
+  salePaidCents: number
+): number {
+  if (selectedNetCents <= 0) return 0
+  if (saleProductsNetCents <= 0) return selectedNetCents
+  const ratio = Math.max(0, Math.min(1, salePaidCents / saleProductsNetCents))
+  return Math.round(selectedNetCents * ratio)
+}

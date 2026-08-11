@@ -29,6 +29,8 @@ export const sales = sqliteTable(
     total: integer('total').notNull(),
     rateUsed: real('rate_used'),
     notes: text('notes'),
+    returnStatus: text('return_status', { enum: ['pending', 'approved', 'rejected'] }),
+    returnRequestId: integer('return_request_id'),
     createdAt: integer('created_at').notNull(),
     voidedAt: integer('voided_at'),
     voidedBy: text('voided_by').references(() => users.id)

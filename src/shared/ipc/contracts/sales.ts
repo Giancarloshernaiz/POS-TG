@@ -64,6 +64,8 @@ const sale = z.object({
   total: z.number(),
   rateUsed: z.number().nullable(),
   notes: z.string().nullable(),
+  returnStatus: z.enum(['pending', 'approved', 'rejected']).nullable().default(null),
+  returnRequestId: z.number().int().nullable().default(null),
   createdAt: z.number(),
   sellerId: z.string().nullable().default(null),
   sellerName: z.string().nullable().default(null),

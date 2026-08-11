@@ -4,6 +4,8 @@ import { getDb } from '@main/infrastructure/db/client'
 import { categories, products, stockLevels } from '@main/infrastructure/db/schema/catalog'
 import { sellers } from '@main/infrastructure/db/schema/sellers'
 import { customers } from '@main/infrastructure/db/schema/customers'
+import { sales } from '@main/infrastructure/db/schema/sales'
+import { syncState } from '@main/infrastructure/db/schema/sync'
 import {
   getSetting,
   setSetting,
@@ -17,6 +19,7 @@ import {
   fetchSellers,
   fetchTasa,
   fetchDescuentoDivisa,
+  fetchReturnedSaleIds,
   type AgroCategory
 } from './agro.client'
 
@@ -46,13 +49,14 @@ function parseCedula(raw: string): { docType: DocType | null; docId: string } {
 
 export async function pullAll(baseUrl: string, storeId: number, ts: number): Promise<PullSummary> {
   // 1) Fetch todo primero (async), luego escribir en una transacción sync.
-  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp] = await Promise.all([
+  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp, returnedSaleIds] = await Promise.all([
     fetchCategories(baseUrl),
     fetchProductsSummary(baseUrl),
     fetchClients(baseUrl),
     fetchSellers(baseUrl, storeId),
     fetchTasa(baseUrl),
-    fetchDescuentoDivisa(baseUrl).catch(() => null)
+    fetchDescuentoDivisa(baseUrl).catch(() => null),
+    fetchReturnedSaleIds(baseUrl).catch(() => null)
   ])
 
   const db = getDb()
@@ -259,6 +263,19 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
   // una caja offline debe seguir cobrando con la configuración ya sincronizada.
   if (descuentoUsdBp !== null) {
     await setSetting(SETTINGS_KEYS.DISCOUNT_USD, { rateBp: descuentoUsdBp, fetchedAt: ts })
+  }
+  if (returnedSaleIds !== null) {
+    const returned = new Set(returnedSaleIds)
+    const mappings = await db.select().from(syncState).all()
+    for (const mapping of mappings) {
+      if (mapping.agroSaleId && returned.has(mapping.agroSaleId)) {
+        await db
+          .update(sales)
+          .set({ returnStatus: 'approved' })
+          .where(eq(sales.id, mapping.saleId))
+          .run()
+      }
+    }
   }
 
   const result: PullSummary = { ...summary, rateUpdated, at: ts }

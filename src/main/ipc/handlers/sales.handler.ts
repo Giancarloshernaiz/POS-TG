@@ -111,6 +111,8 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
     total: row.s.total,
     rateUsed: row.s.rateUsed,
     notes: row.s.notes,
+    returnStatus: row.s.returnStatus ?? null,
+    returnRequestId: row.s.returnRequestId ?? null,
     createdAt: row.s.createdAt,
     sellerId: row.s.sellerId ?? null,
     sellerName: row.sellerNombre

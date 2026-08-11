@@ -14,6 +14,7 @@ import { Input } from '@renderer/components/ui/input'
 import { formatMoney } from '@renderer/lib/money'
 import { ApproverPicker } from './ApproverPicker'
 import { useSale, useRequestReturn, approvalMessage } from './hooks'
+import { paidShareForReturnCents } from '@shared/sale-discounts'
 
 type Props = {
   saleId: string | null
@@ -48,10 +49,15 @@ export function ReturnRequestDialog({
   const seleccion = lineas
     .map((l) => ({ linea: l, qty: cantidades[l.productId] ?? 0 }))
     .filter((x) => x.qty > 0)
-  const totalEstimado = seleccion.reduce(
+  const subtotalSeleccionado = seleccion.reduce(
     (s, x) => s + Math.round((x.linea.lineTotal / x.linea.qty) * x.qty),
     0
   )
+  // Las líneas ya incluyen el descuento de producto. Esta proporción añade
+  // los descuentos globales de la venta para devolver lo realmente pagado.
+  const totalEstimado = sale
+    ? paidShareForReturnCents(subtotalSeleccionado, sale.subtotal, sale.total)
+    : subtotalSeleccionado
 
   async function enviar(): Promise<void> {
     if (!saleId || seleccion.length === 0) return
@@ -113,9 +119,9 @@ export function ReturnRequestDialog({
             </div>
             {seleccion.length > 0 && (
               <p className="pt-1 text-right text-sm">
-                Estimado a devolver: <strong>{formatMoney(totalEstimado)}</strong>
+                Monto pagado a devolver: <strong>{formatMoney(totalEstimado)}</strong>
                 <span className="block text-xs text-muted-foreground">
-                  El monto final lo calcula AgroOne sobre la venta original.
+                  Incluye descuentos de producto y descuentos aplicados al pago.
                 </span>
               </p>
             )}
