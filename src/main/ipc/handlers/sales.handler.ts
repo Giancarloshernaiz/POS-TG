@@ -17,7 +17,6 @@ import {
 import { requirePermission } from '@main/auth/guard'
 import { getActiveSession } from '@main/domain/cash/cash.service'
 import { getCurrentRate } from '@main/infrastructure/fx/fx.service'
-import { getIgtfConfig } from '@main/infrastructure/settings/settings.service'
 import { nextSaleNumber } from '@main/domain/sales/numbering'
 import { resolveDiscount, effectivePriceCents, type Discount } from '@shared/pricing'
 import { PERMISSIONS } from '@shared/auth/permissions'
@@ -170,7 +169,7 @@ export const salesHandlers = {
     const computed: ComputedLine[] = []
     let subtotal = 0
     let discountTotal = 0
-    let taxTotal = 0
+    const taxTotal = 0
     const serialsToSell: Array<{ id: string; imei: string }> = []
     const stockDecrements = new Map<string, number>()
 
@@ -221,7 +220,9 @@ export const salesHandlers = {
 
       const lineSubtotal = effPrice * line.qty
       const discountAmount = (prod.p.basePrice - effPrice) * line.qty
-      const lineTax = Math.round((lineSubtotal * prod.p.taxRateBp) / 10_000)
+      // El sistema no calcula impuestos. Estas columnas se mantienen en cero
+      // para conservar compatibilidad con las bases SQLite ya instaladas.
+      const lineTax = 0
       computed.push({
         id: ulid(),
         productId: prod.p.id,
@@ -231,30 +232,25 @@ export const salesHandlers = {
         qty: line.qty,
         unitPrice: prod.p.basePrice,
         discountAmount,
-        taxRateBp: prod.p.taxRateBp,
+        taxRateBp: 0,
         lineSubtotal,
         lineTax,
-        lineTotal: lineSubtotal + lineTax
+        lineTotal: lineSubtotal
       })
       subtotal += lineSubtotal
       discountTotal += discountAmount
-      taxTotal += lineTax
     }
 
-    const goodsTotal = subtotal + taxTotal
+    const goodsTotal = subtotal
 
-    // ---- Payments + IGTF ----
-    // IGTF only applies to divisa (USD cash / Zelle) payments, and only when enabled in settings.
-    const igtfCfg = await getIgtfConfig()
-    let igtfTotal = 0
+    // ---- Payments ----
+    // No se aplican impuestos ni recargos fiscales a ningún medio de pago.
+    const igtfTotal = 0
     let totalPaid = 0
     let creditAmount = 0
     const computedPayments = input.payments.map((p) => {
       const isDivisa = PAYMENT_DIVISA[p.method] ?? false
       const currency = PAYMENT_CURRENCY[p.method] ?? 'USD'
-      const igtf =
-        igtfCfg.enabled && isDivisa ? Math.round((p.amountUsd * igtfCfg.rateBp) / 10_000) : 0
-      igtfTotal += igtf
       totalPaid += p.amountUsd
       if (p.method === 'credit') creditAmount += p.amountUsd
       return {
@@ -264,12 +260,12 @@ export const salesHandlers = {
         isDivisa,
         amountUsd: p.amountUsd,
         amountOriginal: p.amountOriginal ?? null,
-        igtf,
+        igtf: 0,
         reference: p.reference ?? null
       }
     })
 
-    const total = goodsTotal + igtfTotal
+    const total = goodsTotal
 
     if (totalPaid < total) {
       throw new SaleError('PAYMENT_SHORT', 'el pago no cubre el total')
@@ -414,7 +410,7 @@ export const salesHandlers = {
       action: 'sale.create',
       targetType: 'sale',
       targetId: saleId,
-      after: { number, total, igtfTotal }
+      after: { number, total }
     })
 
     // Sincroniza con AgroOne en segundo plano; la venta ya quedó persistida

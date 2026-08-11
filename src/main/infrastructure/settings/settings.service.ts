@@ -6,7 +6,6 @@ export const SETTINGS_KEYS = {
   LOW_STOCK_GLOBAL: 'inventory.lowStockThreshold',
   FX_BCV: 'fx.bcv',
   STORE_PROFILE: 'store.profile',
-  IGTF: 'fiscal.igtf',
   DEVICE_IDENTITY: 'device.identity',
   AGRO_LAST_PULL: 'sync.agro.lastPull',
   AGRO_CONSUMIDOR_FINAL: 'sync.agro.consumidorFinal',
@@ -15,15 +14,6 @@ export const SETTINGS_KEYS = {
   // viaja en `metadata`, así no hay que dar de alta a cada persona en el máster.
   AGRO_REQUESTER_USER: 'sync.agro.requesterUserId'
 } as const
-
-export type IgtfConfig = { enabled: boolean; rateBp: number }
-
-const DEFAULT_IGTF: IgtfConfig = { enabled: true, rateBp: 300 }
-
-export async function getIgtfConfig(): Promise<IgtfConfig> {
-  const v = await getSetting<IgtfConfig>(SETTINGS_KEYS.IGTF)
-  return v ?? DEFAULT_IGTF
-}
 
 export async function getSetting<T>(key: string): Promise<T | null> {
   const db = getDb()

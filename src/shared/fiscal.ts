@@ -1,19 +1,7 @@
 // Venezuelan fiscal concepts.
 
-/** IGTF — Impuesto a las Grandes Transacciones Financieras. Fixed 3% on payments in foreign currency (divisas). */
-export const IGTF_RATE_BP = 300 // 3.00% in basis points
-
 /** Standard VES decimals. */
 export const VES_DECIMALS = 2
-
-/** IVA presets (basis points). */
-export const IVA_PRESETS = [
-  { label: 'General 16%', value: 1600 },
-  { label: 'Reducido 8%', value: 800 },
-  { label: 'Exento 0%', value: 0 }
-] as const
-
-export const IVA_GENERAL_BP = 1600
 
 /** RIF — Registro de Información Fiscal. Prefix V/E/J/P/G + digits. */
 export type RifType = 'V' | 'E' | 'J' | 'P' | 'G'

@@ -27,7 +27,6 @@ import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 import { useCategories, useCreateProduct, useUpdateProduct, useCreateCategory } from './hooks'
 import { fromCents, toCents } from '@renderer/lib/money'
 import { MoneyInput } from '@renderer/components/MoneyInput'
-import { IVA_PRESETS } from '@shared/fiscal'
 
 const NONE = '__none__'
 const CUSTOM_UNIT = '__custom__'
@@ -43,7 +42,6 @@ const schema = z.object({
   categoryId: z.string().optional(),
   basePrice: z.number({ message: 'requerido' }).nonnegative(),
   costPrice: z.number().nonnegative().optional(),
-  taxRatePct: z.number().nonnegative().max(100),
   unitOfMeasure: z.string().min(1, 'requerido').max(20),
   lowStockThreshold: z.union([z.number().int().nonnegative(), z.nan()]).optional(),
   discountKind: z.enum(['none', 'percent', 'amount']),
@@ -68,7 +66,6 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
   const [submitting, setSubmitting] = useState(false)
   const [creatingCategory, setCreatingCategory] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [isCustomTax, setIsCustomTax] = useState(false)
 
   const {
     register,
@@ -87,7 +84,6 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
       categoryId: NONE,
       basePrice: 0,
       costPrice: 0,
-      taxRatePct: 16,
       unitOfMeasure: 'UNIDAD',
       lowStockThreshold: undefined,
       discountKind: 'none',
@@ -109,7 +105,6 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
               categoryId: product.categoryId ?? NONE,
               basePrice: fromCents(product.basePrice),
               costPrice: fromCents(product.costPrice ?? 0),
-              taxRatePct: product.taxRateBp / 100,
               unitOfMeasure: product.unitOfMeasure,
               lowStockThreshold: product.lowStockThreshold ?? undefined,
               discountKind: product.discountType,
@@ -153,7 +148,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
         categoryId: values.categoryId && values.categoryId !== NONE ? values.categoryId : null,
         basePrice: toCents(values.basePrice),
         costPrice: values.costPrice ? toCents(values.costPrice) : null,
-        taxRateBp: Math.round(values.taxRatePct * 100),
+        taxRateBp: 0,
         unitOfMeasure: values.unitOfMeasure,
         lowStockThreshold:
           values.lowStockThreshold != null && !Number.isNaN(values.lowStockThreshold)
@@ -195,12 +190,9 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
   const active = watch('active')
   const categoryId = watch('categoryId')
   const discountKind = watch('discountKind')
-  const taxRatePct = watch('taxRatePct')
   const basePrice = watch('basePrice')
   const costPrice = watch('costPrice')
   const unitOfMeasure = watch('unitOfMeasure')
-  const presetTaxValues = IVA_PRESETS.map((p) => p.value / 100)
-  const showCustomTax = isCustomTax || (taxRatePct != null && !presetTaxValues.includes(taxRatePct))
   const [isCustomUnit, setIsCustomUnit] = useState(false)
   const showCustomUnit =
     isCustomUnit ||
@@ -248,7 +240,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
             <Textarea id="description" rows={2} {...register('description')} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
             <div className="space-y-2">
               <Label htmlFor="categoryId">Categoría</Label>
               {creatingCategory ? (
@@ -319,43 +311,6 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
                   </Button>
                 </div>
               )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="taxRatePct">IVA</Label>
-              <div className="flex gap-1">
-                <Select
-                  value={showCustomTax ? 'custom' : String(taxRatePct)}
-                  onValueChange={(v) => {
-                    if (v === 'custom') {
-                      setIsCustomTax(true)
-                    } else {
-                      setIsCustomTax(false)
-                      setValue('taxRatePct', Number(v), { shouldDirty: true })
-                    }
-                  }}
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {IVA_PRESETS.map((p) => (
-                      <SelectItem key={p.value} value={String(p.value / 100)}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="custom">Otro…</SelectItem>
-                  </SelectContent>
-                </Select>
-                {showCustomTax && (
-                  <Input
-                    id="taxRatePct"
-                    type="number"
-                    step="0.01"
-                    className="w-24"
-                    {...register('taxRatePct', { valueAsNumber: true })}
-                  />
-                )}
-              </div>
             </div>
           </div>
 

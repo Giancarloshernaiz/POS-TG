@@ -1,11 +1,9 @@
 import { requirePermission } from '@main/auth/guard'
 import {
   getGlobalLowStock,
-  getIgtfConfig,
   getSetting,
   setSetting,
-  SETTINGS_KEYS,
-  type IgtfConfig
+  SETTINGS_KEYS
 } from '@main/infrastructure/settings/settings.service'
 import { audit } from '@main/audit/logger'
 import { PERMISSIONS } from '@shared/auth/permissions'
@@ -15,22 +13,6 @@ import type { StoreProfileDTO } from '@shared/ipc/contracts/settings'
 export const settingsHandlers = {
   async getLowStockGlobal(): Promise<{ threshold: number }> {
     return { threshold: await getGlobalLowStock() }
-  },
-
-  async getIgtf(): Promise<IgtfConfig> {
-    return getIgtfConfig()
-  },
-
-  async setIgtf(input: {
-    sessionId: string
-    enabled: boolean
-    rateBp: number
-  }): Promise<IgtfConfig> {
-    const session = requirePermission(input.sessionId, PERMISSIONS.SETTINGS_MANAGE)
-    const cfg: IgtfConfig = { enabled: input.enabled, rateBp: input.rateBp }
-    await setSetting(SETTINGS_KEYS.IGTF, cfg)
-    await audit({ userId: session.userId, action: 'settings.igtf', after: { ...cfg } })
-    return cfg
   },
 
   async setLowStockGlobal(input: {

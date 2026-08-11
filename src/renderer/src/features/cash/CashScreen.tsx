@@ -115,8 +115,6 @@ function ReportView({ report }: { report: CashReportDTO }): React.JSX.Element {
         <CardContent className="space-y-2 text-sm">
           <Row label="Ventas" value={String(report.salesCount)} />
           <Row label="Bruto" money={report.salesGross} />
-          <Row label="IVA" money={report.taxTotal} />
-          <Row label="IGTF" money={report.igtfTotal} />
           <Row label="Monto inicial" money={report.openingAmount} />
         </CardContent>
       </Card>

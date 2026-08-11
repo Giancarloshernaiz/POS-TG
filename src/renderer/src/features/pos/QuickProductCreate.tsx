@@ -21,7 +21,6 @@ import {
 } from '@renderer/components/ui/select'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 import { useCreateProduct, useCategories } from '@renderer/features/products/hooks'
-import { IVA_PRESETS } from '@shared/fiscal'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 
 type Props = {
@@ -43,7 +42,6 @@ export function QuickProductCreate({
   const [name, setName] = useState('')
   const [priceCents, setPriceCents] = useState(0)
   const [costCents, setCostCents] = useState(0)
-  const [taxRateBp, setTaxRateBp] = useState(1600)
   const [categoryId, setCategoryId] = useState<string>('')
   const createMut = useCreateProduct()
   // El alta va contra AgroOne, que exige categoría. Solo se ofrecen las que ya
@@ -77,7 +75,7 @@ export function QuickProductCreate({
         categoryId,
         basePrice: priceCents,
         costPrice: costCents > 0 ? costCents : null,
-        taxRateBp,
+        taxRateBp: 0,
         tracksSerial: false,
         unitOfMeasure: 'UNIDAD',
         discountType: 'none',
@@ -178,23 +176,6 @@ export function QuickProductCreate({
             <Label>Precio de costo (opcional)</Label>
             <MoneyInput valueCents={costCents} onChangeCents={setCostCents} />
           </div>
-
-          <div className="space-y-2">
-            <Label>IVA</Label>
-            <Select value={String(taxRateBp)} onValueChange={(v) => setTaxRateBp(Number(v))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {IVA_PRESETS.map((p) => (
-                  <SelectItem key={p.value} value={String(p.value)}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>

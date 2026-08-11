@@ -35,24 +35,6 @@ export const settingsContract = {
     output: z.object({ threshold: z.number() }),
     errors: ['NOT_AUTHENTICATED', 'FORBIDDEN'] as const
   },
-  getIgtf: {
-    kind: 'request',
-    channel: 'settings.getIgtf',
-    input: z.object({}).optional(),
-    output: z.object({ enabled: z.boolean(), rateBp: z.number() }),
-    errors: [] as const
-  },
-  setIgtf: {
-    kind: 'request',
-    channel: 'settings.setIgtf',
-    input: z.object({
-      sessionId: z.string(),
-      enabled: z.boolean(),
-      rateBp: z.number().int().nonnegative().max(10000)
-    }),
-    output: z.object({ enabled: z.boolean(), rateBp: z.number() }),
-    errors: ['NOT_AUTHENTICATED', 'FORBIDDEN'] as const
-  },
   getStoreProfile: {
     kind: 'request',
     channel: 'settings.getStoreProfile',

@@ -16,34 +16,6 @@ import type {
 } from '@shared/ipc/contracts/sync'
 import type { P2pStatusDTO, SerialConflictDTO } from '@shared/ipc/contracts/p2p'
 
-type IgtfCfg = { enabled: boolean; rateBp: number }
-
-export function useIgtf(): ReturnType<typeof useQuery<IgtfCfg>> {
-  return useQuery({
-    queryKey: ['settings', 'igtf'],
-    queryFn: async () => {
-      const res = await api.settings.getIgtf({})
-      if (!res.ok) throw new Error(res.error.message)
-      return res.data
-    }
-  })
-}
-
-export function useSetIgtf(): ReturnType<
-  typeof useMutation<IgtfCfg, Error, { enabled: boolean; rateBp: number }>
-> {
-  const qc = useQueryClient()
-  const sessionId = useAuth((s) => s.session?.id ?? '')
-  return useMutation({
-    mutationFn: async (input) => {
-      const res = await api.settings.setIgtf({ sessionId, ...input })
-      if (!res.ok) throw new Error(res.error.code)
-      return res.data
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'igtf'] })
-  })
-}
-
 export function usePrinterConfig(): ReturnType<typeof useQuery<PrinterConfigDTO>> {
   return useQuery({
     queryKey: ['settings', 'printer'],

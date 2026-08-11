@@ -38,8 +38,7 @@ import { CustomerCedulaSlot } from './CustomerCedulaSlot'
 import { QuickProductCreate } from './QuickProductCreate'
 import { formatMoney, formatVes } from '@renderer/lib/money'
 import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethods'
-import { PAYMENT_DIVISA } from '@shared/payment'
-import { useIgtf } from '@renderer/features/settings/hooks'
+import { PAYMENT_CURRENCY } from '@shared/payment'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 
@@ -70,7 +69,6 @@ function POSContent(): React.JSX.Element {
   const cart = useCart()
   const rate = useFx((s) => s.rate?.rate ?? null)
   const authSessionId = useAuth((s) => s.session?.id ?? '')
-  const { data: igtfCfg } = useIgtf()
   const createSale = useCreateSale()
   // Comisionista de la venta. Opcional: no toda tienda trabaja con vendedores,
   // y el selector solo aparece si el máster mandó alguno para esta tienda.
@@ -102,18 +100,7 @@ function POSContent(): React.JSX.Element {
 
   // ---- Totals ----
   const subtotal = cart.lines.reduce((s, l) => s + l.effectivePrice * l.qty, 0)
-  const taxTotal = cart.lines.reduce(
-    (s, l) => s + Math.round(l.effectivePrice * l.qty * (l.taxRateBp / 10_000)),
-    0
-  )
-  const goodsTotal = subtotal + taxTotal
-  const igtfEnabled = igtfCfg?.enabled ?? false
-  const igtfRateBp = igtfCfg?.rateBp ?? 0
-  const igtfTotal = pays.reduce((s, p) => {
-    if (!igtfEnabled || !PAYMENT_DIVISA[p.method]) return s
-    return s + Math.round((p.amountCents * igtfRateBp) / 10_000)
-  }, 0)
-  const total = goodsTotal + igtfTotal
+  const total = subtotal
   const paid = pays.reduce((s, p) => s + p.amountCents, 0)
   const change = Math.max(0, paid - total)
   const remaining = Math.max(0, total - paid)
@@ -161,7 +148,42 @@ function POSContent(): React.JSX.Element {
   }
 
   function addPayment(): void {
-    setPays((p) => [...p, { id: crypto.randomUUID(), method: 'cash_ves', amountCents: remaining }])
+    setPays((current) => {
+      const usedMethods = new Set(current.map((p) => p.method))
+      const nextMethod =
+        PAYMENT_METHODS.find((method) => !usedMethods.has(method.value))?.value ?? 'cash_ves'
+      const paidByOthers = current.reduce((sum, payment) => sum + payment.amountCents, 0)
+      return [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          method: nextMethod,
+          amountCents: Math.max(0, total - paidByOthers)
+        }
+      ]
+    })
+  }
+
+  function startMixedPayment(): void {
+    const firstPart = Math.floor(total / 2)
+    setPays([
+      { id: crypto.randomUUID(), method: 'cash_ves', amountCents: firstPart },
+      { id: crypto.randomUUID(), method: 'cash_usd', amountCents: total - firstPart }
+    ])
+  }
+
+  function completePayment(id: string): void {
+    setPays((current) => {
+      const paidByOthers = current.reduce(
+        (sum, payment) => sum + (payment.id === id ? 0 : payment.amountCents),
+        0
+      )
+      return current.map((payment) =>
+        payment.id === id
+          ? { ...payment, amountCents: Math.max(0, total - paidByOthers) }
+          : payment
+      )
+    })
   }
 
   async function checkout(): Promise<void> {
@@ -171,6 +193,10 @@ function POSContent(): React.JSX.Element {
     }
     if (paid < total) {
       toast.error('El pago no cubre el total')
+      return
+    }
+    if (pays.some((p) => PAYMENT_CURRENCY[p.method] === 'VES') && !rate) {
+      toast.error('Se necesita una tasa de cambio para registrar pagos en bolívares')
       return
     }
     const hasCredit = pays.some((p) => p.method === 'credit')
@@ -188,12 +214,20 @@ function POSContent(): React.JSX.Element {
           serialId: l.serialId ?? null,
           qty: l.qty
         })),
-        payments: pays.map((p) => ({
-          method: p.method,
-          amountUsd: p.amountCents,
-          amountOriginal: null,
-          reference: null
-        })),
+        payments: pays.map((p) => {
+          const currency = PAYMENT_CURRENCY[p.method]
+          return {
+            method: p.method,
+            amountUsd: p.amountCents,
+            // AgroOne guarda el monto en la moneda indicada. Para VES se
+            // conserva el equivalente real, no el valor numérico en USD.
+            amountOriginal:
+              currency === 'VES' && rate
+                ? Math.round((p.amountCents / 100) * rate * 100) / 100
+                : null,
+            reference: null
+          }
+        }),
         notes: null
       })
       toast.success(
@@ -328,10 +362,6 @@ function POSContent(): React.JSX.Element {
           <CardContent className="space-y-3 p-4">
             <div className="space-y-1 text-sm">
               <TotalRow label="Subtotal" cents={subtotal} rate={rate} />
-              <TotalRow label="IVA" cents={taxTotal} rate={rate} />
-              {igtfTotal > 0 && (
-                <TotalRow label={`IGTF (${igtfRateBp / 100}%)`} cents={igtfTotal} rate={rate} />
-              )}
               <div className="flex items-center justify-between border-t pt-2 text-lg font-bold">
                 <span>Total</span>
                 <div className="text-right">
@@ -350,11 +380,21 @@ function POSContent(): React.JSX.Element {
         <Card className="flex-1">
           <CardContent className="space-y-2 p-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Pagos</span>
-              <Button size="sm" variant="outline" onClick={addPayment}>
-                <Plus className="h-3 w-3" />
-                Añadir
-              </Button>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Pagos</span>
+                {pays.length > 1 && <Badge variant="secondary">Mixto</Badge>}
+              </div>
+              <div className="flex items-center gap-1">
+                {pays.length <= 1 && (
+                  <Button size="sm" variant="outline" onClick={startMixedPayment}>
+                    Pago mixto
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={addPayment}>
+                  <Plus className="h-3 w-3" />
+                  Método
+                </Button>
+              </div>
             </div>
             {pays.length === 0 && (
               <p className="text-xs text-muted-foreground">Añade al menos un método de pago.</p>
@@ -375,7 +415,11 @@ function POSContent(): React.JSX.Element {
                     </SelectTrigger>
                     <SelectContent>
                       {PAYMENT_METHODS.map((m) => (
-                        <SelectItem key={m.value} value={m.value}>
+                        <SelectItem
+                          key={m.value}
+                          value={m.value}
+                          disabled={pays.some((other) => other.id !== p.id && other.method === m.value)}
+                        >
                           {m.label}
                         </SelectItem>
                       ))}
@@ -397,6 +441,22 @@ function POSContent(): React.JSX.Element {
                     )
                   }
                 />
+                {pays.length > 1 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-muted-foreground">
+                      {PAYMENT_CURRENCY[p.method] === 'VES' ? 'Pago en bolívares' : 'Pago en dólares'}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => completePayment(p.id)}
+                    >
+                      Completar restante
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
 

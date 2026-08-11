@@ -166,11 +166,23 @@ export async function pushSale(saleId: string): Promise<void> {
       currency,
       idempotencyKey: saleId,
       ...(vendedorAgroId !== undefined ? { vendedorAgroId } : {}),
-      payments: payRows.map((p) => ({
-        metodoPago: p.method,
-        monto: p.currency === 'VES' ? (p.amountOriginal ?? p.amountUsd / 100) : p.amountUsd / 100,
-        moneda: p.currency
-      })),
+      payments: payRows.map((p) => {
+        const montoOriginalVes =
+          p.currency === 'VES'
+            ? (p.amountOriginal ??
+              (sale.rateUsed
+                ? Math.round((p.amountUsd / 100) * sale.rateUsed * 100) / 100
+                : null))
+            : null
+        if (p.currency === 'VES' && montoOriginalVes === null) {
+          throw new Error(`pago VES sin monto original ni tasa: ${p.id}`)
+        }
+        return {
+          metodoPago: p.method,
+          monto: p.currency === 'VES' ? montoOriginalVes! : p.amountUsd / 100,
+          moneda: p.currency
+        }
+      }),
       lines: lineRows.map((l) => ({
         productAgroId: agroIdByProduct.get(l.productId)!,
         quantity: l.qty,

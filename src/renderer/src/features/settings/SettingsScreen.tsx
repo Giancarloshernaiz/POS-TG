@@ -18,7 +18,6 @@ import { formatRate } from '@renderer/lib/money'
 import { useLowStockGlobal, useSetLowStockGlobal, useRefreshFx, useSetManualFx } from './hooks'
 import { StoreProfileCard } from './StoreProfileCard'
 import { PrinterCard } from './PrinterCard'
-import { IgtfCard } from './IgtfCard'
 import { BackupCard } from './BackupCard'
 import { DeviceCard } from './DeviceCard'
 import { SyncCard } from './SyncCard'
@@ -101,7 +100,7 @@ export function SettingsScreen(): React.JSX.Element {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Configuración</h2>
         <p className="text-sm text-muted-foreground">
-          Datos fiscales, tasa de cambio y parámetros de inventario.
+          Datos de la tienda, tasa de cambio y parámetros de inventario.
         </p>
       </div>
 
@@ -214,7 +213,6 @@ export function SettingsScreen(): React.JSX.Element {
           </CardContent>
         </Card>
 
-        <IgtfCard />
       </div>
 
       {canManage && <BackupCard />}

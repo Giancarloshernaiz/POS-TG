@@ -181,8 +181,7 @@ export async function printSaleTicket(
   printer.alignLeft()
 
   for (const l of sale.lines) {
-    // "(I)" marca el renglón como afecto, igual que en el máster.
-    printer.leftRight(l.description, '(I)')
+    printer.println(l.description)
     const base = l.unitPrice * l.qty
     const descPct = base > 0 ? Math.round((l.discountAmount / base) * 100) : 0
     printer.println(
@@ -209,13 +208,14 @@ export async function printSaleTicket(
     printer.alignLeft()
     for (const p of sale.payments) {
       const etiqueta = PAYMENT_LABEL[p.method as PaymentMethod] ?? p.method
-      const monto = p.currency === 'USD' ? `${usd(p.amountUsd)} USD` : `${bs(p.amountUsd)} VES`
+      const monto =
+        p.currency === 'USD'
+          ? `${usd(p.amountUsd)} USD`
+          : `${p.amountOriginal?.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? bs(p.amountUsd)} VES`
       printer.leftRight(etiqueta, monto)
     }
     printer.drawLine()
   }
-
-  if (sale.igtfTotal > 0) printer.leftRight('IGTF (3%)', usd(sale.igtfTotal))
 
   // Totales bimoneda, con la misma lógica del máster.
   printer.bold(true)
