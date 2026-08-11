@@ -21,6 +21,13 @@ const storeProfileInput = z.object({
 })
 
 export const settingsContract = {
+  getDiscountUsd: {
+    kind: 'request',
+    channel: 'settings.getDiscountUsd',
+    input: z.object({}).optional(),
+    output: z.object({ rateBp: z.number().int().nonnegative() }),
+    errors: [] as const
+  },
   getLowStockGlobal: {
     kind: 'request',
     channel: 'settings.getLowStockGlobal',

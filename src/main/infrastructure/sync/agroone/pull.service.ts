@@ -16,6 +16,7 @@ import {
   fetchClients,
   fetchSellers,
   fetchTasa,
+  fetchDescuentoDivisa,
   type AgroCategory
 } from './agro.client'
 
@@ -45,12 +46,13 @@ function parseCedula(raw: string): { docType: DocType | null; docId: string } {
 
 export async function pullAll(baseUrl: string, storeId: number, ts: number): Promise<PullSummary> {
   // 1) Fetch todo primero (async), luego escribir en una transacción sync.
-  const [agroCats, agroProds, agroClients, agroSellers, tasa] = await Promise.all([
+  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp] = await Promise.all([
     fetchCategories(baseUrl),
     fetchProductsSummary(baseUrl),
     fetchClients(baseUrl),
     fetchSellers(baseUrl, storeId),
-    fetchTasa(baseUrl)
+    fetchTasa(baseUrl),
+    fetchDescuentoDivisa(baseUrl).catch(() => null)
   ])
 
   const db = getDb()
@@ -63,7 +65,14 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
         tx.select().from(categories).where(eq(categories.name, c.nombre)).get()
       if (local) {
         tx.update(categories)
-          .set({ name: c.nombre, icon: c.simbolo, agroId: c.agroId, updatedAt: ts })
+          .set({
+            name: c.nombre,
+            icon: c.simbolo,
+            agroId: c.agroId,
+            discountType: c.descuentoBp > 0 ? 'percent' : 'none',
+            discountValue: c.descuentoBp,
+            updatedAt: ts
+          })
           .where(eq(categories.id, local.id))
           .run()
         catMap.set(c.agroId, local.id)
@@ -75,6 +84,8 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
             name: c.nombre,
             icon: c.simbolo,
             agroId: c.agroId,
+            discountType: c.descuentoBp > 0 ? 'percent' : 'none',
+            discountValue: c.descuentoBp,
             createdAt: ts,
             updatedAt: ts
           })
@@ -113,6 +124,8 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
         unitOfMeasure: p.unidadMedida,
         lowStockThreshold: p.stockMinimo,
         agroId: p.agroId,
+        discountType: p.descuentoBp > 0 ? ('percent' as const) : ('none' as const),
+        discountValue: p.descuentoBp,
         // El máster manda sobre la baja lógica: si allá se desactivó, acá
         // deja de ofrecerse.
         active: p.activo,
@@ -241,6 +254,11 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
       publishedAt: tasa.fecha
     })
     rateUpdated = true
+  }
+  // Un fallo aislado del endpoint no debe borrar el último porcentaje válido:
+  // una caja offline debe seguir cobrando con la configuración ya sincronizada.
+  if (descuentoUsdBp !== null) {
+    await setSetting(SETTINGS_KEYS.DISCOUNT_USD, { rateBp: descuentoUsdBp, fetchedAt: ts })
   }
 
   const result: PullSummary = { ...summary, rateUpdated, at: ts }

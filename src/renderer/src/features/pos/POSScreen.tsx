@@ -33,7 +33,7 @@ import { useFx } from '@renderer/stores/fx'
 import { useActiveSession } from '@renderer/features/cash/hooks'
 import { OpenCashForm } from '@renderer/features/cash/OpenCashForm'
 import { useAuth } from '@renderer/stores/auth'
-import { findByCode, useCreateSale, printTicket, useSellers } from './hooks'
+import { findByCode, useCreateSale, printTicket, useSellers, useDiscountUsd } from './hooks'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
 import { QuickProductCreate } from './QuickProductCreate'
 import { formatMoney, formatVes } from '@renderer/lib/money'
@@ -41,6 +41,11 @@ import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethod
 import { PAYMENT_CURRENCY } from '@shared/payment'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
+import {
+  amountToCompleteSaleCents,
+  totalAfterUsdDiscountCents,
+  usdPaymentDiscountCents
+} from '@shared/sale-discounts'
 
 // Radix Select no admite value="" en un item, así que el "sin vendedor"
 // necesita un centinela.
@@ -73,6 +78,7 @@ function POSContent(): React.JSX.Element {
   // Comisionista de la venta. Opcional: no toda tienda trabaja con vendedores,
   // y el selector solo aparece si el máster mandó alguno para esta tienda.
   const { data: sellers } = useSellers()
+  const { data: discountUsd } = useDiscountUsd()
   const [sellerId, setSellerId] = useState<string>('')
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -99,8 +105,16 @@ function POSContent(): React.JSX.Element {
   const canCreateProduct = useAuth((s) => s.hasPermission('products.create'))
 
   // ---- Totals ----
+  const grossSubtotal = cart.lines.reduce((s, l) => s + l.unitPrice * l.qty, 0)
   const subtotal = cart.lines.reduce((s, l) => s + l.effectivePrice * l.qty, 0)
-  const total = subtotal
+  const productDiscount = grossSubtotal - subtotal
+  const discountUsdRateBp = discountUsd?.rateBp ?? 0
+  const discountPayments = pays.map((p) => ({
+    amountCents: p.amountCents,
+    currency: PAYMENT_CURRENCY[p.method]
+  }))
+  const usdDiscount = usdPaymentDiscountCents(subtotal, discountPayments, discountUsdRateBp)
+  const total = totalAfterUsdDiscountCents(subtotal, discountPayments, discountUsdRateBp)
   const paid = pays.reduce((s, p) => s + p.amountCents, 0)
   const change = Math.max(0, paid - total)
   const remaining = Math.max(0, total - paid)
@@ -166,22 +180,47 @@ function POSContent(): React.JSX.Element {
 
   function startMixedPayment(): void {
     const firstPart = Math.floor(total / 2)
-    setPays([
+    const entries: PayEntry[] = [
       { id: crypto.randomUUID(), method: 'cash_ves', amountCents: firstPart },
-      { id: crypto.randomUUID(), method: 'cash_usd', amountCents: total - firstPart }
-    ])
+      { id: crypto.randomUUID(), method: 'cash_usd', amountCents: 0 }
+    ]
+    const usdAmount = amountToCompleteSaleCents(
+      subtotal,
+      entries.map((p) => ({ amountCents: p.amountCents, currency: PAYMENT_CURRENCY[p.method] })),
+      1,
+      discountUsdRateBp
+    )
+    entries[1]!.amountCents = usdAmount
+    setPays(entries)
+  }
+
+  function changePaymentMethod(id: string, method: PaymentMethod): void {
+    setPays((current) => {
+      const next = current.map((payment) => (payment.id === id ? { ...payment, method } : payment))
+      if (next.length === 1) {
+        next[0]!.amountCents =
+          PAYMENT_CURRENCY[method] === 'USD'
+            ? Math.max(0, subtotal - Math.round((subtotal * discountUsdRateBp) / 10_000))
+            : subtotal
+      }
+      return next
+    })
   }
 
   function completePayment(id: string): void {
     setPays((current) => {
-      const paidByOthers = current.reduce(
-        (sum, payment) => sum + (payment.id === id ? 0 : payment.amountCents),
-        0
+      const targetIndex = current.findIndex((payment) => payment.id === id)
+      const amount = amountToCompleteSaleCents(
+        subtotal,
+        current.map((payment) => ({
+          amountCents: payment.amountCents,
+          currency: PAYMENT_CURRENCY[payment.method]
+        })),
+        targetIndex,
+        discountUsdRateBp
       )
       return current.map((payment) =>
-        payment.id === id
-          ? { ...payment, amountCents: Math.max(0, total - paidByOthers) }
-          : payment
+        payment.id === id ? { ...payment, amountCents: amount } : payment
       )
     })
   }
@@ -361,7 +400,17 @@ function POSContent(): React.JSX.Element {
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="space-y-1 text-sm">
-              <TotalRow label="Subtotal" cents={subtotal} rate={rate} />
+              <TotalRow label="Subtotal productos" cents={grossSubtotal} rate={rate} />
+              {productDiscount > 0 && (
+                <TotalRow label="Descuento productos" cents={-productDiscount} rate={rate} />
+              )}
+              {usdDiscount > 0 && (
+                <TotalRow
+                  label={`Descuento pago USD (${(discountUsdRateBp / 100).toFixed(2)}%)`}
+                  cents={-usdDiscount}
+                  rate={rate}
+                />
+              )}
               <div className="flex items-center justify-between border-t pt-2 text-lg font-bold">
                 <span>Total</span>
                 <div className="text-right">
@@ -404,11 +453,7 @@ function POSContent(): React.JSX.Element {
                 <div className="flex items-center gap-1">
                   <Select
                     value={p.method}
-                    onValueChange={(v) =>
-                      setPays((cur) =>
-                        cur.map((x) => (x.id === p.id ? { ...x, method: v as PaymentMethod } : x))
-                      )
-                    }
+                    onValueChange={(v) => changePaymentMethod(p.id, v as PaymentMethod)}
                   >
                     <SelectTrigger className="flex-1">
                       <SelectValue />
@@ -536,7 +581,19 @@ function CartRow({ line }: { line: CartLine }): React.JSX.Element {
           />
         )}
       </TableCell>
-      <TableCell className="text-right font-mono">{formatMoney(line.effectivePrice)}</TableCell>
+      <TableCell className="text-right font-mono">
+        {line.effectivePrice < line.unitPrice && (
+          <div className="text-xs text-muted-foreground line-through">
+            {formatMoney(line.unitPrice)}
+          </div>
+        )}
+        <div>{formatMoney(line.effectivePrice)}</div>
+        {line.effectivePrice < line.unitPrice && (
+          <Badge variant="secondary" className="mt-1 text-[10px]">
+            -{Math.round(((line.unitPrice - line.effectivePrice) / line.unitPrice) * 100)}%
+          </Badge>
+        )}
+      </TableCell>
       <TableCell className="text-right font-mono">
         {formatMoney(line.effectivePrice * line.qty)}
       </TableCell>

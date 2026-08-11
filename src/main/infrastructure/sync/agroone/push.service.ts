@@ -163,6 +163,10 @@ export async function pushSale(saleId: string): Promise<void> {
       storeId,
       saleDateIso: new Date(sale.createdAt).toISOString(),
       totalAmountUsd: sale.total / 100,
+      subtotalOriginalUsd: sale.subtotal / 100,
+      ...(sale.usdDiscountTotal > 0
+        ? { descripcion: `[DESCUENTO_GLOBAL:${(sale.usdDiscountTotal / 100).toFixed(2)}]` }
+        : {}),
       currency,
       idempotencyKey: saleId,
       ...(vendedorAgroId !== undefined ? { vendedorAgroId } : {}),

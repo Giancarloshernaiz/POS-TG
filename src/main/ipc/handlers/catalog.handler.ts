@@ -126,12 +126,25 @@ type ProductRow = {
   updatedAt: number
 }
 
-function toProductDto(row: ProductRow): ProductDTO {
+async function nearestCategoryDiscount(categoryId: string | null): Promise<Discount | null> {
+  const db = getDb()
+  let id = categoryId
+  const visited = new Set<string>()
+  while (id && !visited.has(id)) {
+    visited.add(id)
+    const category = await db.select().from(categories).where(eq(categories.id, id)).get()
+    if (!category) break
+    if (category.discountType !== 'none' && category.discountValue > 0) {
+      return { type: category.discountType, value: category.discountValue }
+    }
+    id = category.parentId ?? null
+  }
+  return null
+}
+
+async function toProductDto(row: ProductRow): Promise<ProductDTO> {
   const productDiscount: Discount = { type: row.discountType, value: row.discountValue }
-  const categoryDiscount: Discount | null =
-    row.categoryDiscountType != null
-      ? { type: row.categoryDiscountType, value: row.categoryDiscountValue ?? 0 }
-      : null
+  const categoryDiscount = await nearestCategoryDiscount(row.categoryId)
   const { discount, source } = resolveDiscount(productDiscount, categoryDiscount)
   return {
     id: row.id,
@@ -257,7 +270,7 @@ async function fetchProductById(id: string): Promise<ProductDTO> {
     .where(eq(products.id, id))
     .get()
   if (!row) throw new CatalogError('NOT_FOUND', 'producto no existe')
-  return toProductDto(row as ProductRow)
+  return await toProductDto(row as ProductRow)
 }
 
 async function fetchCategoryById(id: string): Promise<CategoryDTO> {
@@ -442,7 +455,7 @@ export const catalogHandlers = {
       .get()
 
     return {
-      items: items.map((r) => toProductDto(r as ProductRow)),
+      items: await Promise.all(items.map((r) => toProductDto(r as ProductRow))),
       total: totalRow?.c ?? 0
     }
   },
@@ -464,7 +477,7 @@ export const catalogHandlers = {
       .where(or(eq(products.sku, input.code), eq(products.barcode, input.code)))
       .orderBy(desc(products.active))
       .get()
-    return row ? toProductDto(row as ProductRow) : null
+    return row ? await toProductDto(row as ProductRow) : null
   },
 
   async createProduct(input: Input<'createProduct'>): Promise<ProductDTO> {

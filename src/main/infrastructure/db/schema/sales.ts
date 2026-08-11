@@ -22,6 +22,8 @@ export const sales = sqliteTable(
     status: text('status', { enum: ['completed', 'voided'] }).notNull(),
     subtotal: integer('subtotal').notNull(),
     discountTotal: integer('discount_total').notNull().default(0),
+    usdDiscountTotal: integer('usd_discount_total').notNull().default(0),
+    usdDiscountRateBp: integer('usd_discount_rate_bp').notNull().default(0),
     taxTotal: integer('tax_total').notNull().default(0),
     igtfTotal: integer('igtf_total').notNull().default(0),
     total: integer('total').notNull(),

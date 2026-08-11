@@ -11,6 +11,10 @@ import { isValidRif, normalizeRif } from '@shared/fiscal'
 import type { StoreProfileDTO } from '@shared/ipc/contracts/settings'
 
 export const settingsHandlers = {
+  async getDiscountUsd(): Promise<{ rateBp: number }> {
+    const value = await getSetting<{ rateBp: number }>(SETTINGS_KEYS.DISCOUNT_USD)
+    return { rateBp: value?.rateBp ?? 0 }
+  },
   async getLowStockGlobal(): Promise<{ threshold: number }> {
     return { threshold: await getGlobalLowStock() }
   },

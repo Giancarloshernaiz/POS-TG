@@ -83,3 +83,15 @@ export function useSellers(): ReturnType<typeof useQuery<SellerDTO[]>> {
     }
   })
 }
+
+export function useDiscountUsd(): ReturnType<typeof useQuery<{ rateBp: number }>> {
+  return useQuery({
+    queryKey: ['discount-usd'],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const res = await api.settings.getDiscountUsd({})
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data
+    }
+  })
+}

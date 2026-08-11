@@ -1,0 +1,2 @@
+ALTER TABLE sales ADD COLUMN usd_discount_total INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN usd_discount_rate_bp INTEGER NOT NULL DEFAULT 0;

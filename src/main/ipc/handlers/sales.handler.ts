@@ -27,6 +27,8 @@ import { getIdentity } from '@main/infrastructure/device/identity.service'
 import { salesContract } from '@shared/ipc/contracts/sales'
 import type { SaleDTO } from '@shared/ipc/contracts/sales'
 import { PAYMENT_DIVISA, PAYMENT_CURRENCY } from '@shared/payment'
+import { usdPaymentDiscountCents } from '@shared/sale-discounts'
+import { getSetting, SETTINGS_KEYS } from '@main/infrastructure/settings/settings.service'
 
 type Input<K extends keyof typeof salesContract> = z.infer<(typeof salesContract)[K]['input']>
 
@@ -102,6 +104,8 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
     status: row.s.status,
     subtotal: row.s.subtotal,
     discountTotal: row.s.discountTotal,
+    usdDiscountTotal: row.s.usdDiscountTotal,
+    usdDiscountRateBp: row.s.usdDiscountRateBp,
     taxTotal: row.s.taxTotal,
     igtfTotal: row.s.igtfTotal,
     total: row.s.total,
@@ -187,8 +191,19 @@ export const salesHandlers = {
       if (!prod) throw new SaleError('PRODUCT_NOT_FOUND', `producto ${line.productId} no existe`)
 
       const productDiscount: Discount = { type: prod.p.discountType, value: prod.p.discountValue }
-      const categoryDiscount: Discount | null =
-        prod.catDiscType != null ? { type: prod.catDiscType, value: prod.catDiscVal ?? 0 } : null
+      let categoryDiscount: Discount | null = null
+      let categoryId = prod.p.categoryId
+      const visited = new Set<string>()
+      while (categoryId && !visited.has(categoryId)) {
+        visited.add(categoryId)
+        const category = await db.select().from(categories).where(eq(categories.id, categoryId)).get()
+        if (!category) break
+        if (category.discountType !== 'none' && category.discountValue > 0) {
+          categoryDiscount = { type: category.discountType, value: category.discountValue }
+          break
+        }
+        categoryId = category.parentId
+      }
       const { discount } = resolveDiscount(productDiscount, categoryDiscount)
       const effPrice = effectivePriceCents(prod.p.basePrice, discount)
 
@@ -265,7 +280,14 @@ export const salesHandlers = {
       }
     })
 
-    const total = goodsTotal
+    const discountSetting = await getSetting<{ rateBp: number }>(SETTINGS_KEYS.DISCOUNT_USD)
+    const usdDiscountRateBp = discountSetting?.rateBp ?? 0
+    const usdDiscountTotal = usdPaymentDiscountCents(
+      goodsTotal,
+      computedPayments.map((p) => ({ amountCents: p.amountUsd, currency: p.currency })),
+      usdDiscountRateBp
+    )
+    const total = Math.max(0, goodsTotal - usdDiscountTotal)
 
     if (totalPaid < total) {
       throw new SaleError('PAYMENT_SHORT', 'el pago no cubre el total')
@@ -293,8 +315,8 @@ export const salesHandlers = {
     try {
       raw
         .prepare(
-          `INSERT INTO sales (id, number, customer_id, seller_id, user_id, cash_session_id, status, subtotal, discount_total, tax_total, igtf_total, total, rate_used, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO sales (id, number, customer_id, seller_id, user_id, cash_session_id, status, subtotal, discount_total, usd_discount_total, usd_discount_rate_bp, tax_total, igtf_total, total, rate_used, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           saleId,
@@ -305,6 +327,8 @@ export const salesHandlers = {
           cashSession.id,
           subtotal,
           discountTotal,
+          usdDiscountTotal,
+          usdDiscountRateBp,
           taxTotal,
           igtfTotal,
           total,

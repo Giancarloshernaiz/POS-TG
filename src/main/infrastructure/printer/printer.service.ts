@@ -192,6 +192,13 @@ export async function printSaleTicket(
 
   if (sale.discountTotal > 0) {
     printer.leftRight('Descuento productos', `-${usd(sale.discountTotal)}`)
+  }
+  if (sale.usdDiscountTotal > 0) {
+    const rateLabel =
+      sale.usdDiscountRateBp > 0 ? ` (${(sale.usdDiscountRateBp / 100).toFixed(2)}%)` : ''
+    printer.leftRight(`Descuento pago USD${rateLabel}`, `-${usd(sale.usdDiscountTotal)}`)
+  }
+  if (sale.discountTotal > 0 || sale.usdDiscountTotal > 0) {
     printer.drawLine()
   }
 

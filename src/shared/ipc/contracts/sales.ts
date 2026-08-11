@@ -57,6 +57,8 @@ const sale = z.object({
   status: z.enum(['completed', 'voided']),
   subtotal: z.number(),
   discountTotal: z.number(),
+  usdDiscountTotal: z.number().default(0),
+  usdDiscountRateBp: z.number().default(0),
   taxTotal: z.number(),
   igtfTotal: z.number(),
   total: z.number(),

@@ -130,6 +130,7 @@ export type AgroCategory = {
   nombre: string
   parentAgroId: number | null
   simbolo: string | null
+  descuentoBp: number
 }
 
 export type AgroProduct = {
@@ -146,6 +147,7 @@ export type AgroProduct = {
   costoPromedioCents: number
   stockMinimo: number
   existencias: Array<{ tiendaId: number; cantidad: number }>
+  descuentoBp: number
 }
 
 export type AgroSeller = {
@@ -175,13 +177,15 @@ export async function fetchCategories(baseUrl: string): Promise<AgroCategory[]> 
       nombre: string
       categoria_padre_id: number | null
       simbolo?: string | null
+      descuento?: unknown
     }>
   }>(baseUrl, '/api/v1/inventory/category/?flat=true')
   return (data.categories ?? []).map((c) => ({
     agroId: c.id,
     nombre: c.nombre,
     parentAgroId: c.categoria_padre_id ?? null,
-    simbolo: c.simbolo ?? null
+    simbolo: c.simbolo ?? null,
+    descuentoBp: Math.round(num(c.descuento) * 100)
   }))
 }
 
@@ -201,6 +205,7 @@ export async function fetchProductsSummary(baseUrl: string): Promise<AgroProduct
       stockMinimo: unknown
       categoria?: { id: number } | null
       existencias?: Array<{ tiendaId: number; cantidad: unknown }>
+      descuento?: unknown
     }>
   }>(baseUrl, '/api/v1/inventory/products/summary')
   return (data.products ?? []).map((p) => ({
@@ -219,8 +224,22 @@ export async function fetchProductsSummary(baseUrl: string): Promise<AgroProduct
     existencias: (p.existencias ?? []).map((e) => ({
       tiendaId: e.tiendaId,
       cantidad: Math.round(num(e.cantidad))
-    }))
+    })),
+    descuentoBp: Math.round(num(p.descuento) * 100)
   }))
+}
+
+/** Porcentaje global aplicado por Tiendas Gala a pagos en USD. */
+export async function fetchDescuentoDivisa(baseUrl: string): Promise<number> {
+  const data = await get<{ descuento?: { descuento?: unknown } | unknown }>(
+    baseUrl,
+    '/api/v1/finance/descuento'
+  )
+  const raw =
+    data && typeof data.descuento === 'object' && data.descuento !== null
+      ? (data.descuento as { descuento?: unknown }).descuento
+      : data.descuento
+  return Math.max(0, Math.round(num(raw) * 100))
 }
 
 /** GET /sales/clients/ — con `cedula` filtra exacto (case-insensitive) server-side. */
@@ -309,6 +328,8 @@ export type SaleHeaderInput = {
   totalAmountUsd: number // dólares, no centavos
   currency: 'USD' | 'VES' | 'MIXTO'
   vendedorAgroId?: number
+  subtotalOriginalUsd?: number
+  descripcion?: string
   payments: Array<{ metodoPago: string; monto: number; moneda: 'USD' | 'VES' }>
 }
 
@@ -340,6 +361,8 @@ export async function postSaleFull(
     total_amount: input.totalAmountUsd,
     currency: input.currency,
     vendedor_id: input.vendedorAgroId,
+    subtotal_original_us: input.subtotalOriginalUsd,
+    descripcion: input.descripcion,
     payments: input.payments,
     idempotency_key: input.idempotencyKey,
     details: input.lines.map((l) => ({
