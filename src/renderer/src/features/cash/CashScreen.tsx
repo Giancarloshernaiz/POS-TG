@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, ArrowDownToLine, ArrowUpFromLine, Lock } from 'lucide-react'
+import { Loader2, ArrowDownToLine, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Card,
@@ -71,10 +71,6 @@ function OpenSessionView({ cashSessionId }: { cashSessionId: string }): React.JS
           <Button variant="outline" onClick={() => setMovementOpen('deposit')}>
             <ArrowDownToLine className="h-4 w-4" />
             Ingreso
-          </Button>
-          <Button variant="outline" onClick={() => setMovementOpen('withdrawal')}>
-            <ArrowUpFromLine className="h-4 w-4" />
-            Retiro
           </Button>
           {canClose && (
             <Button onClick={() => setCloseOpen(true)}>
