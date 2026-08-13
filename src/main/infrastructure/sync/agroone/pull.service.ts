@@ -49,15 +49,16 @@ function parseCedula(raw: string): { docType: DocType | null; docId: string } {
 
 export async function pullAll(baseUrl: string, storeId: number, ts: number): Promise<PullSummary> {
   // 1) Fetch todo primero (async), luego escribir en una transacción sync.
-  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp, returnedSaleIds] = await Promise.all([
-    fetchCategories(baseUrl),
-    fetchProductsSummary(baseUrl),
-    fetchClients(baseUrl),
-    fetchSellers(baseUrl, storeId),
-    fetchTasa(baseUrl),
-    fetchDescuentoDivisa(baseUrl).catch(() => null),
-    fetchReturnedSaleIds(baseUrl).catch(() => null)
-  ])
+  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp, returnedSaleIds] =
+    await Promise.all([
+      fetchCategories(baseUrl),
+      fetchProductsSummary(baseUrl),
+      fetchClients(baseUrl),
+      fetchSellers(baseUrl, storeId),
+      fetchTasa(baseUrl),
+      fetchDescuentoDivisa(baseUrl).catch(() => null),
+      fetchReturnedSaleIds(baseUrl).catch(() => null)
+    ])
 
   const db = getDb()
   const summary = db.transaction((tx): Omit<PullSummary, 'at' | 'rateUpdated'> => {
@@ -181,6 +182,10 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
         email: c.correo,
         address: c.direccion,
         specialDiscountBp: c.descuentoEspecialBp,
+        favorBalance: c.saldoFavorCents,
+        returnCreditBalance: c.creditoDevolucionCents,
+        fidelityBalance: c.saldoFidelidadCents,
+        fidelityAccumulated: c.acumuladoFidelidadCents,
         agroId: c.agroId,
         active: true,
         updatedAt: ts
@@ -233,7 +238,10 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
     let deactivated = 0
     for (const row of tx.select().from(products).all()) {
       if (row.agroId !== null && !enMaster.has(row.agroId) && row.active) {
-        tx.update(products).set({ active: false, updatedAt: ts }).where(eq(products.id, row.id)).run()
+        tx.update(products)
+          .set({ active: false, updatedAt: ts })
+          .where(eq(products.id, row.id))
+          .run()
         deactivated++
       }
     }

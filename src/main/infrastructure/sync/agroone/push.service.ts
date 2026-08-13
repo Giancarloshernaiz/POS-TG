@@ -162,8 +162,13 @@ export async function pushSale(saleId: string): Promise<void> {
       clientAgroId,
       storeId,
       saleDateIso: new Date(sale.createdAt).toISOString(),
-      totalAmountUsd: sale.total / 100,
+      // El mÃ¡ster aplica nuevamente los beneficios sobre el total comercial.
+      // Por eso se envÃ­a el total previo a crédito/fidelización y el crédito
+      // solicitado por separado; los pagos siguen siendo lo realmente cobrado.
+      totalAmountUsd: (sale.total + sale.creditApplied + sale.fidelityApplied) / 100,
       subtotalOriginalUsd: sale.subtotal / 100,
+      usarSaldoFavor: sale.creditApplied > 0,
+      saldoFavorMonto: sale.creditApplied / 100,
       ...(sale.usdDiscountTotal > 0
         ? { descripcion: `[DESCUENTO_GLOBAL:${(sale.usdDiscountTotal / 100).toFixed(2)}]` }
         : {}),
@@ -174,9 +179,7 @@ export async function pushSale(saleId: string): Promise<void> {
         const montoOriginalVes =
           p.currency === 'VES'
             ? (p.amountOriginal ??
-              (sale.rateUsed
-                ? Math.round((p.amountUsd / 100) * sale.rateUsed * 100) / 100
-                : null))
+              (sale.rateUsed ? Math.round((p.amountUsd / 100) * sale.rateUsed * 100) / 100 : null))
             : null
         if (p.currency === 'VES' && montoOriginalVes === null) {
           throw new Error(`pago VES sin monto original ni tasa: ${p.id}`)

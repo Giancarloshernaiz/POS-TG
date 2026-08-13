@@ -32,6 +32,40 @@ export function useCashReport(
   })
 }
 
+export function useCashHistory(filters: {
+  search?: string | undefined
+  from?: number | undefined
+  to?: number | undefined
+}): ReturnType<typeof useQuery<{ items: CashReportDTO[]; total: number }>> {
+  const sessionId = useAuth((s) => s.session?.id ?? '')
+  return useQuery({
+    queryKey: ['cash', 'history', filters.search ?? '', filters.from ?? 0, filters.to ?? 0],
+    queryFn: async () => {
+      const input: Parameters<typeof api.cash.history>[0] = {
+        sessionId,
+        limit: 200,
+        offset: 0
+      }
+      if (filters.search) input.search = filters.search
+      if (filters.from !== undefined) input.from = filters.from
+      if (filters.to !== undefined) input.to = filters.to
+      const res = await api.cash.history(input)
+      if (!res.ok) throw new Error(res.error.code)
+      return res.data
+    },
+    enabled: !!sessionId
+  })
+}
+
+export async function printCashReport(sessionId: string, cashSessionId: string): Promise<void> {
+  const res = await api.print.cashReport({ sessionId, cashSessionId })
+  if (!res.ok) {
+    const error = new Error(res.error.message || res.error.code) as Error & { code?: string }
+    error.code = res.error.code
+    throw error
+  }
+}
+
 export function useOpenCash(): ReturnType<
   typeof useMutation<CashSessionRowDTO, Error, { openingAmount: number; notes?: string | null }>
 > {

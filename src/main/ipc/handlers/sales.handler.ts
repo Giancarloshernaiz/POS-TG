@@ -27,7 +27,12 @@ import { getIdentity } from '@main/infrastructure/device/identity.service'
 import { salesContract } from '@shared/ipc/contracts/sales'
 import type { SaleDTO } from '@shared/ipc/contracts/sales'
 import { PAYMENT_DIVISA, PAYMENT_CURRENCY } from '@shared/payment'
-import { usdPaymentDiscountCents } from '@shared/sale-discounts'
+import {
+  customerBenefitsCents,
+  FIDELITY_REWARD_CENTS,
+  FIDELITY_THRESHOLD_CENTS,
+  usdPaymentDiscountCents
+} from '@shared/sale-discounts'
 import { getSetting, SETTINGS_KEYS } from '@main/infrastructure/settings/settings.service'
 
 type Input<K extends keyof typeof salesContract> = z.infer<(typeof salesContract)[K]['input']>
@@ -106,6 +111,8 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
     discountTotal: row.s.discountTotal,
     usdDiscountTotal: row.s.usdDiscountTotal,
     usdDiscountRateBp: row.s.usdDiscountRateBp,
+    creditApplied: row.s.creditApplied,
+    fidelityApplied: row.s.fidelityApplied,
     taxTotal: row.s.taxTotal,
     igtfTotal: row.s.igtfTotal,
     total: row.s.total,
@@ -115,9 +122,7 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
     returnRequestId: row.s.returnRequestId ?? null,
     createdAt: row.s.createdAt,
     sellerId: row.s.sellerId ?? null,
-    sellerName: row.sellerNombre
-      ? `${row.sellerNombre} ${row.sellerApellido ?? ''}`.trim()
-      : null,
+    sellerName: row.sellerNombre ? `${row.sellerNombre} ${row.sellerApellido ?? ''}`.trim() : null,
     syncStatus,
     agroSaleId: sync?.agroSaleId ?? null,
     lines: lineRows.map((l) => ({
@@ -198,7 +203,11 @@ export const salesHandlers = {
       const visited = new Set<string>()
       while (categoryId && !visited.has(categoryId)) {
         visited.add(categoryId)
-        const category = await db.select().from(categories).where(eq(categories.id, categoryId)).get()
+        const category = await db
+          .select()
+          .from(categories)
+          .where(eq(categories.id, categoryId))
+          .get()
         if (!category) break
         if (category.discountType !== 'none' && category.discountValue > 0) {
           categoryDiscount = { type: category.discountType, value: category.discountValue }
@@ -289,7 +298,22 @@ export const salesHandlers = {
       computedPayments.map((p) => ({ amountCents: p.amountUsd, currency: p.currency })),
       usdDiscountRateBp
     )
-    const total = Math.max(0, goodsTotal - usdDiscountTotal)
+    const totalBeforeBenefits = Math.max(0, goodsTotal - usdDiscountTotal)
+    const selectedCustomer = input.customerId
+      ? await db.select().from(customers).where(eq(customers.id, input.customerId)).get()
+      : null
+    if (input.customerId && !selectedCustomer) {
+      throw new SaleError('CREDIT_NO_CUSTOMER', 'cliente no existe')
+    }
+    const benefits = customerBenefitsCents(
+      totalBeforeBenefits,
+      selectedCustomer?.fidelityBalance ?? 0,
+      selectedCustomer?.returnCreditBalance ?? 0,
+      input.useStoreCredit
+    )
+    const creditApplied = benefits.creditAppliedCents
+    const fidelityApplied = benefits.fidelityAppliedCents
+    const total = benefits.totalCents
 
     if (totalPaid < total) {
       throw new SaleError('PAYMENT_SHORT', 'el pago no cubre el total')
@@ -298,9 +322,8 @@ export const salesHandlers = {
     // Credit validation
     if (creditAmount > 0) {
       if (!input.customerId) throw new SaleError('CREDIT_NO_CUSTOMER', 'crédito requiere cliente')
-      const cust = await db.select().from(customers).where(eq(customers.id, input.customerId)).get()
-      if (!cust) throw new SaleError('CREDIT_NO_CUSTOMER', 'cliente no existe')
-      if (cust.currentBalance + creditAmount > cust.creditLimit) {
+      if (!selectedCustomer) throw new SaleError('CREDIT_NO_CUSTOMER', 'cliente no existe')
+      if (selectedCustomer.currentBalance + creditAmount > selectedCustomer.creditLimit) {
         throw new SaleError('CREDIT_LIMIT_EXCEEDED', 'excede el límite de crédito')
       }
     }
@@ -317,8 +340,8 @@ export const salesHandlers = {
     try {
       raw
         .prepare(
-          `INSERT INTO sales (id, number, customer_id, seller_id, user_id, cash_session_id, status, subtotal, discount_total, usd_discount_total, usd_discount_rate_bp, tax_total, igtf_total, total, rate_used, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO sales (id, number, customer_id, seller_id, user_id, cash_session_id, status, subtotal, discount_total, usd_discount_total, usd_discount_rate_bp, credit_applied, fidelity_applied, tax_total, igtf_total, total, rate_used, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           saleId,
@@ -331,6 +354,8 @@ export const salesHandlers = {
           discountTotal,
           usdDiscountTotal,
           usdDiscountRateBp,
+          creditApplied,
+          fidelityApplied,
           taxTotal,
           igtfTotal,
           total,
@@ -423,6 +448,35 @@ export const salesHandlers = {
             `UPDATE customers SET current_balance = current_balance + ?, updated_at = ? WHERE id = ?`
           )
           .run(creditAmount, now, input.customerId)
+      }
+
+      // El saldo a favor se divide en crédito por devolución (uso opcional) y
+      // recompensa de fidelización (se aplica automáticamente en ventas >= $30).
+      // Se actualiza dentro de la misma transacción para impedir reutilizarlo.
+      if (selectedCustomer && input.customerId) {
+        let nextFavor = Math.max(0, selectedCustomer.favorBalance - creditApplied - fidelityApplied)
+        const nextReturnCredit = Math.max(0, selectedCustomer.returnCreditBalance - creditApplied)
+        let nextFidelity = Math.max(0, selectedCustomer.fidelityBalance - fidelityApplied)
+        let nextAccumulated = selectedCustomer.fidelityAccumulated
+
+        if (fidelityApplied > 0) {
+          nextAccumulated = 0
+        } else if (selectedCustomer.fidelityBalance < FIDELITY_REWARD_CENTS) {
+          nextAccumulated = selectedCustomer.fidelityAccumulated + subtotal
+          if (nextAccumulated >= FIDELITY_THRESHOLD_CENTS) {
+            nextAccumulated = FIDELITY_THRESHOLD_CENTS
+            nextFavor += FIDELITY_REWARD_CENTS
+            nextFidelity += FIDELITY_REWARD_CENTS
+          }
+        }
+
+        raw
+          .prepare(
+            `UPDATE customers
+             SET favor_balance = ?, return_credit_balance = ?, fidelity_balance = ?, fidelity_accumulated = ?, updated_at = ?
+             WHERE id = ?`
+          )
+          .run(nextFavor, nextReturnCredit, nextFidelity, nextAccumulated, now, input.customerId)
       }
 
       raw.exec('COMMIT')

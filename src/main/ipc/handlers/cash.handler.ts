@@ -7,6 +7,7 @@ import {
   closeSession,
   addMovement,
   buildReport,
+  listClosedReports,
   getActiveSession
 } from '@main/domain/cash/cash.service'
 import { audit } from '@main/audit/logger'
@@ -83,6 +84,12 @@ export const cashHandlers = {
     requireSession(input.sessionId)
     const db = getDb()
     return buildReport(db, input.cashSessionId)
+  },
+
+  async history(input: Input<'history'>): Promise<{ items: CashReportDTO[]; total: number }> {
+    requirePermission(input.sessionId, PERMISSIONS.REPORTS_Z)
+    const db = getDb()
+    return listClosedReports(db, input)
   },
 
   async close(input: Input<'close'>): Promise<CashReportDTO> {

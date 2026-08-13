@@ -52,6 +52,20 @@ export const printContract = {
       'PRINT_FAILED'
     ] as const
   },
+  cashReport: {
+    kind: 'request',
+    channel: 'print.cashReport',
+    input: z.object({ sessionId: z.string(), cashSessionId: z.string() }),
+    output: z.object({ ok: z.literal(true) }),
+    errors: [
+      'NOT_AUTHENTICATED',
+      'FORBIDDEN',
+      'NOT_FOUND',
+      'PRINTER_NOT_CONFIGURED',
+      'PRINTER_OFFLINE',
+      'PRINT_FAILED'
+    ] as const
+  },
   openDrawer: {
     kind: 'request',
     channel: 'print.openDrawer',

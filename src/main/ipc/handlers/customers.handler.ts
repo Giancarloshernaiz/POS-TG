@@ -36,6 +36,10 @@ function toDto(row: typeof customers.$inferSelect): CustomerDTO {
     creditLimit: row.creditLimit,
     currentBalance: row.currentBalance,
     specialDiscountBp: row.specialDiscountBp,
+    favorBalance: row.favorBalance,
+    returnCreditBalance: row.returnCreditBalance,
+    fidelityBalance: row.fidelityBalance,
+    fidelityAccumulated: row.fidelityAccumulated,
     active: row.active,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt

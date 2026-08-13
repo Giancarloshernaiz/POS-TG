@@ -9,6 +9,7 @@ import { ProductsScreen } from './features/products/ProductsScreen'
 import { InventoryScreen } from './features/inventory/InventoryScreen'
 import { SettingsScreen } from './features/settings/SettingsScreen'
 import { CashScreen } from './features/cash/CashScreen'
+import { CashHistoryScreen } from './features/cash/CashHistoryScreen'
 import { CustomersScreen } from './features/customers/CustomersScreen'
 import { POSScreen } from './features/pos/POSScreen'
 import { ReportsScreen } from './features/reports/ReportsScreen'
@@ -40,6 +41,9 @@ function App(): React.JSX.Element {
       break
     case 'cash':
       content = <CashScreen />
+      break
+    case 'cash-history':
+      content = <CashHistoryScreen />
       break
     case 'customers':
       content = <CustomersScreen />

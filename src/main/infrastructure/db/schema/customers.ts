@@ -16,6 +16,11 @@ export const customers = sqliteTable(
     // Clientes.descuento_especial en AgroOne. No se aplica aún automáticamente
     // en el pricing de venta (§ver CLAUDE memory / conversación).
     specialDiscountBp: integer('special_discount_bp').notNull().default(0),
+    /** Saldo total informado por AgroOne: devoluciones + recompensa de fidelidad. */
+    favorBalance: integer('favor_balance').notNull().default(0),
+    returnCreditBalance: integer('return_credit_balance').notNull().default(0),
+    fidelityBalance: integer('fidelity_balance').notNull().default(0),
+    fidelityAccumulated: integer('fidelity_accumulated').notNull().default(0),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
     agroId: integer('agro_id'),
     lwwHlc: text('lww_hlc'),

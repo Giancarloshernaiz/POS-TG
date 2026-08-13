@@ -165,6 +165,15 @@ export type AgroClient = {
   correo: string | null
   direccion: string | null
   descuentoEspecialBp: number
+  saldoFavorCents: number
+  creditoDevolucionCents: number
+  saldoFidelidadCents: number
+  acumuladoFidelidadCents: number
+}
+
+export type AgroClientCredit = {
+  clienteAgroId: number
+  saldoCents: number
 }
 
 export type AgroTasa = { rate: number; fecha: number | null } | null
@@ -265,23 +274,60 @@ export async function fetchClients(baseUrl: string, cedula?: string): Promise<Ag
       correo: string | null
       direccion: string | null
       descuento_especial: unknown
+      saldo_favor?: unknown
+      monto_acumulado_fidelizacion?: unknown
     }>
   }>(baseUrl, path)
-  return (data.clients ?? []).map((c) => ({
-    agroId: c.id,
-    nombreContacto: c.nombre_contacto,
-    cedula: c.cedula,
-    telefono: c.telefono ?? null,
-    correo: c.correo ?? null,
-    direccion: c.direccion ?? null,
-    descuentoEspecialBp: Math.round(num(c.descuento_especial) * 100)
-  }))
+  const returnCredits = await fetchClientCredits(baseUrl)
+  const creditByClient = new Map<number, number>()
+  for (const credit of returnCredits) {
+    creditByClient.set(
+      credit.clienteAgroId,
+      (creditByClient.get(credit.clienteAgroId) ?? 0) + credit.saldoCents
+    )
+  }
+  return (data.clients ?? []).map((c) => {
+    const saldoFavorCents = Math.max(0, Math.round(num(c.saldo_favor) * 100))
+    const creditoDevolucionCents = Math.min(saldoFavorCents, creditByClient.get(c.id) ?? 0)
+    return {
+      agroId: c.id,
+      nombreContacto: c.nombre_contacto,
+      cedula: c.cedula,
+      telefono: c.telefono ?? null,
+      correo: c.correo ?? null,
+      direccion: c.direccion ?? null,
+      descuentoEspecialBp: Math.round(num(c.descuento_especial) * 100),
+      saldoFavorCents,
+      creditoDevolucionCents,
+      saldoFidelidadCents: Math.max(0, saldoFavorCents - creditoDevolucionCents),
+      acumuladoFidelidadCents: Math.max(0, Math.round(num(c.monto_acumulado_fidelizacion) * 100))
+    }
+  })
+}
+
+/** Créditos activos originados por devoluciones, separados del saldo de fidelidad. */
+export async function fetchClientCredits(baseUrl: string): Promise<AgroClientCredit[]> {
+  const data = await get<{
+    items?: Array<{ clienteId?: unknown; saldo_favor?: unknown; origen?: string }>
+  }>(baseUrl, '/api/v1/sales/credits')
+  return (data.items ?? [])
+    .filter((item) => item.origen !== 'SALDO_FAVOR')
+    .map((item) => ({
+      clienteAgroId: Math.round(num(item.clienteId)),
+      saldoCents: Math.max(0, Math.round(num(item.saldo_favor) * 100))
+    }))
+    .filter((item) => item.clienteAgroId > 0 && item.saldoCents > 0)
 }
 
 /** GET /sales/vendedores/farms/:tiendaId → comisionistas de esta tienda. */
 export async function fetchSellers(baseUrl: string, tiendaId: number): Promise<AgroSeller[]> {
   const data = await get<{
-    vendedores?: Array<{ id: number; nombre: string; apellido?: string | null; cedula?: string | null }>
+    vendedores?: Array<{
+      id: number
+      nombre: string
+      apellido?: string | null
+      cedula?: string | null
+    }>
   }>(baseUrl, `/api/v1/sales/vendedores/farms/${tiendaId}`)
   return (data.vendedores ?? []).map((v) => ({
     agroId: v.id,
@@ -339,6 +385,8 @@ export type SaleHeaderInput = {
   vendedorAgroId?: number
   subtotalOriginalUsd?: number
   descripcion?: string
+  usarSaldoFavor?: boolean
+  saldoFavorMonto?: number
   payments: Array<{ metodoPago: string; monto: number; moneda: 'USD' | 'VES' }>
 }
 
@@ -372,6 +420,8 @@ export async function postSaleFull(
     vendedor_id: input.vendedorAgroId,
     subtotal_original_us: input.subtotalOriginalUsd,
     descripcion: input.descripcion,
+    usar_saldo_favor: input.usarSaldoFavor,
+    saldo_favor_monto: input.saldoFavorMonto,
     payments: input.payments,
     idempotency_key: input.idempotencyKey,
     details: input.lines.map((l) => ({
@@ -478,7 +528,10 @@ export async function fetchDispatchesForStore(
 }
 
 /** GET /inventory/dispatches/:id */
-export async function fetchDispatch(baseUrl: string, agroDispatchId: number): Promise<AgroDispatch> {
+export async function fetchDispatch(
+  baseUrl: string,
+  agroDispatchId: number
+): Promise<AgroDispatch> {
   const data = await get<{ despacho: RawDispatch }>(
     baseUrl,
     `/api/v1/inventory/dispatches/${agroDispatchId}`
@@ -611,7 +664,11 @@ export async function createAuthorizationRequest(
   }
 ): Promise<AuthorizationRequestDTO> {
   const url = `${normalizeBaseUrl(baseUrl)}/api/v1/authorization/requests`
-  const data = await sendJson<{ request: Parameters<typeof toAuthorization>[0] }>(url, 'POST', input)
+  const data = await sendJson<{ request: Parameters<typeof toAuthorization>[0] }>(
+    url,
+    'POST',
+    input
+  )
   return toAuthorization(data.request)
 }
 
@@ -660,7 +717,8 @@ function toAgroProductBody(input: Partial<AgroProductInput>): Record<string, unk
   if (input.costoPromedioCents !== undefined && input.costoPromedioCents !== null) {
     body.costoPromedio = input.costoPromedioCents / 100
   }
-  if (input.stockMinimo !== undefined && input.stockMinimo !== null) body.stockMinimo = input.stockMinimo
+  if (input.stockMinimo !== undefined && input.stockMinimo !== null)
+    body.stockMinimo = input.stockMinimo
   return body
 }
 

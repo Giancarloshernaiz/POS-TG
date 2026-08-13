@@ -57,6 +57,20 @@ export function CustomerCedulaSlot({
                 </span>
               )}
             </div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              <span className="font-medium text-emerald-700">
+                Saldo a favor ${(customer.favorBalance / 100).toFixed(2)}
+              </span>
+              <span className="text-muted-foreground">
+                Devoluciones ${(customer.returnCreditBalance / 100).toFixed(2)}
+              </span>
+              <span className="text-muted-foreground">
+                Fidelización ${(customer.fidelityBalance / 100).toFixed(2)}
+              </span>
+              <span className="text-muted-foreground">
+                Progreso ${(customer.fidelityAccumulated / 100).toFixed(2)} / $420.00
+              </span>
+            </div>
           </div>
         </div>
         <Button variant="ghost" size="sm" onClick={() => onCustomer(null)}>

@@ -4,6 +4,7 @@ import { logger } from '@main/logger'
 import { formatMoney, formatVes } from '@shared/format'
 import type { SaleDTO } from '@shared/ipc/contracts/sales'
 import type { StoreProfileDTO } from '@shared/ipc/contracts/settings'
+import type { CashReportDTO } from '@shared/ipc/contracts/cash'
 import { PAYMENT_LABEL, type PaymentMethod } from '@shared/payment'
 
 const SETTINGS_KEY_PRINTER = 'printer.config'
@@ -93,10 +94,7 @@ export async function printSaleTicket(
   try {
     const connected = await printer.isPrinterConnected()
     if (!connected) {
-      throw new PrinterError(
-        'PRINTER_OFFLINE',
-        `impresora no responde en ${cfg.interface}`
-      )
+      throw new PrinterError('PRINTER_OFFLINE', `impresora no responde en ${cfg.interface}`)
     }
   } catch (e) {
     if (e instanceof PrinterError) throw e
@@ -126,7 +124,8 @@ export async function printSaleTicket(
   const pagadoVes = sale.payments
     .filter((p) => p.currency === 'VES')
     .reduce((acc, p) => acc + p.amountUsd, 0)
-  const tipoVenta = pagadoVes === 0 && pagadoUsd > 0 ? 'USD' : pagadoUsd === 0 && pagadoVes > 0 ? 'VES' : 'MIXTO'
+  const tipoVenta =
+    pagadoVes === 0 && pagadoUsd > 0 ? 'USD' : pagadoUsd === 0 && pagadoVes > 0 ? 'VES' : 'MIXTO'
 
   // Kilos y unidades se cuentan aparte, como en el máster.
   let totalKilos = 0
@@ -164,10 +163,9 @@ export async function printSaleTicket(
   printer.drawLine()
 
   printer.println(`Cliente: ${sale.customerName || 'Cliente General'}`)
-  const rifCliente =
-    sale.customerDocId
-      ? `${sale.customerDocType ? `${sale.customerDocType}-` : ''}${sale.customerDocId}`
-      : 'N/A'
+  const rifCliente = sale.customerDocId
+    ? `${sale.customerDocType ? `${sale.customerDocType}-` : ''}${sale.customerDocId}`
+    : 'N/A'
   printer.println(`Rif: ${rifCliente}`)
   printer.println(`Direccion: ${sale.customerAddress || 'N/A'}`)
   if (sale.sellerName) printer.println(`Vendedor: ${sale.sellerName}`)
@@ -198,7 +196,18 @@ export async function printSaleTicket(
       sale.usdDiscountRateBp > 0 ? ` (${(sale.usdDiscountRateBp / 100).toFixed(2)}%)` : ''
     printer.leftRight(`Descuento pago USD${rateLabel}`, `-${usd(sale.usdDiscountTotal)}`)
   }
-  if (sale.discountTotal > 0 || sale.usdDiscountTotal > 0) {
+  if (sale.fidelityApplied > 0) {
+    printer.leftRight('Fidelizacion', `-${usd(sale.fidelityApplied)}`)
+  }
+  if (sale.creditApplied > 0) {
+    printer.leftRight('Credito a favor', `-${usd(sale.creditApplied)}`)
+  }
+  if (
+    sale.discountTotal > 0 ||
+    sale.usdDiscountTotal > 0 ||
+    sale.fidelityApplied > 0 ||
+    sale.creditApplied > 0
+  ) {
     printer.drawLine()
   }
 
@@ -260,10 +269,82 @@ export async function printSaleTicket(
     await printer.execute()
   } catch (e) {
     const cause = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
-    logger.error(
-      { err: e, sale: sale.number, iface: cfg.interface },
-      'printer execute failed'
-    )
+    logger.error({ err: e, sale: sale.number, iface: cfg.interface }, 'printer execute failed')
+    throw new PrinterError('PRINT_FAILED', `no se pudo imprimir: ${cause}`)
+  }
+}
+
+export async function printCashReport(
+  report: CashReportDTO,
+  store: StoreProfileDTO | null,
+  cajaLabel: string
+): Promise<void> {
+  const cfg = await getPrinterConfig()
+  const printer = build(cfg)
+  try {
+    const connected = await printer.isPrinterConnected()
+    if (!connected) {
+      throw new PrinterError('PRINTER_OFFLINE', `impresora no responde en ${cfg.interface}`)
+    }
+  } catch (e) {
+    if (e instanceof PrinterError) throw e
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new PrinterError('PRINTER_OFFLINE', `no se pudo conectar: ${msg}`)
+  }
+
+  const money = (cents: number): string => `$${(cents / 100).toFixed(2)}`
+  const opened = new Date(report.openedAt)
+  const closed = report.closedAt ? new Date(report.closedAt) : null
+
+  printer.alignCenter()
+  printer.bold(true)
+  printer.println(store?.legalName || 'Tienda')
+  printer.println('REPORTE Z - CIERRE DE CAJA')
+  printer.bold(false)
+  if (store?.rif) printer.println(`RIF: ${store.rif}`)
+  printer.drawLine()
+  printer.alignLeft()
+  printer.leftRight('Caja:', cajaLabel)
+  printer.leftRight('Cajero:', report.userName)
+  printer.leftRight('Apertura:', opened.toLocaleString('es-VE'))
+  printer.leftRight('Cierre:', closed?.toLocaleString('es-VE') ?? 'Caja abierta')
+  printer.drawLine()
+  printer.leftRight('Ventas:', String(report.salesCount))
+  printer.leftRight('Total ventas:', money(report.salesGross))
+  printer.drawLine()
+  printer.alignCenter()
+  printer.bold(true)
+  printer.println('METODOS DE PAGO')
+  printer.bold(false)
+  printer.alignLeft()
+  for (const [method, totals] of Object.entries(report.byMethod)) {
+    const label = PAYMENT_LABEL[method as PaymentMethod] ?? method
+    printer.leftRight(`${label} (${totals.count})`, money(totals.amountUsd))
+  }
+  printer.drawLine()
+  printer.leftRight('Monto inicial:', money(report.openingAmount))
+  printer.leftRight('Ingresos:', money(report.movementsIn))
+  printer.leftRight('Retiros:', money(report.movementsOut))
+  printer.leftRight('Efectivo esperado:', money(report.expectedCashUsd))
+  printer.leftRight('Efectivo contado:', money(report.closingAmount ?? 0))
+  printer.bold(true)
+  const difference = report.overShort ?? 0
+  printer.leftRight(
+    difference === 0 ? 'Resultado:' : difference > 0 ? 'Sobrante:' : 'Faltante:',
+    difference === 0 ? 'CUADRADA' : money(Math.abs(difference))
+  )
+  printer.bold(false)
+  printer.drawLine()
+  printer.alignCenter()
+  printer.println(`Impreso: ${new Date().toLocaleString('es-VE')}`)
+  printer.newLine()
+  printer.cut()
+
+  try {
+    await printer.execute()
+  } catch (e) {
+    const cause = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    logger.error({ err: e, sessionId: report.sessionId }, 'cash report print failed')
     throw new PrinterError('PRINT_FAILED', `no se pudo imprimir: ${cause}`)
   }
 }

@@ -1,13 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import {
-  Search,
-  Trash2,
-  Plus,
-  X,
-  ShoppingCart,
-  Loader2,
-  UserRound
-} from 'lucide-react'
+import { Search, Trash2, Plus, X, ShoppingCart, Loader2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
@@ -42,7 +34,8 @@ import { PAYMENT_CURRENCY } from '@shared/payment'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
 import {
-  amountToCompleteSaleCents,
+  customerBenefitsCents,
+  FIDELITY_REWARD_CENTS,
   totalAfterUsdDiscountCents,
   usdPaymentDiscountCents
 } from '@shared/sale-discounts'
@@ -80,6 +73,7 @@ function POSContent(): React.JSX.Element {
   const { data: sellers } = useSellers()
   const { data: discountUsd } = useDiscountUsd()
   const [sellerId, setSellerId] = useState<string>('')
+  const [useStoreCredit, setUseStoreCredit] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const customerReady = cart.customer !== null || cart.walkIn
@@ -114,10 +108,50 @@ function POSContent(): React.JSX.Element {
     currency: PAYMENT_CURRENCY[p.method]
   }))
   const usdDiscount = usdPaymentDiscountCents(subtotal, discountPayments, discountUsdRateBp)
-  const total = totalAfterUsdDiscountCents(subtotal, discountPayments, discountUsdRateBp)
+  const totalBeforeBenefits = totalAfterUsdDiscountCents(
+    subtotal,
+    discountPayments,
+    discountUsdRateBp
+  )
+  const benefits = customerBenefitsCents(
+    totalBeforeBenefits,
+    cart.customer?.fidelityBalance ?? 0,
+    cart.customer?.returnCreditBalance ?? 0,
+    useStoreCredit
+  )
+  const total = benefits.totalCents
   const paid = pays.reduce((s, p) => s + p.amountCents, 0)
   const change = Math.max(0, paid - total)
   const remaining = Math.max(0, total - paid)
+
+  function amountToCompleteWithBenefits(entries: PayEntry[], targetIndex: number): number {
+    const paidByOthers = entries.reduce(
+      (sum, payment, index) => sum + (index === targetIndex ? 0 : payment.amountCents),
+      0
+    )
+    let low = 0
+    let high = Math.max(subtotal, totalBeforeBenefits)
+    while (low < high) {
+      const candidate = Math.floor((low + high) / 2)
+      const trial = entries.map((payment, index) =>
+        index === targetIndex ? { ...payment, amountCents: candidate } : payment
+      )
+      const trialPayments = trial.map((payment) => ({
+        amountCents: payment.amountCents,
+        currency: PAYMENT_CURRENCY[payment.method]
+      }))
+      const beforeBenefits = totalAfterUsdDiscountCents(subtotal, trialPayments, discountUsdRateBp)
+      const trialTotal = customerBenefitsCents(
+        beforeBenefits,
+        cart.customer?.fidelityBalance ?? 0,
+        cart.customer?.returnCreditBalance ?? 0,
+        useStoreCredit
+      ).totalCents
+      if (paidByOthers + candidate >= trialTotal) high = candidate
+      else low = candidate + 1
+    }
+    return low
+  }
 
   function addProduct(product: ProductDTO): void {
     if (!product.active) {
@@ -166,15 +200,16 @@ function POSContent(): React.JSX.Element {
       const usedMethods = new Set(current.map((p) => p.method))
       const nextMethod =
         PAYMENT_METHODS.find((method) => !usedMethods.has(method.value))?.value ?? 'cash_ves'
-      const paidByOthers = current.reduce((sum, payment) => sum + payment.amountCents, 0)
-      return [
+      const next = [
         ...current,
         {
           id: crypto.randomUUID(),
           method: nextMethod,
-          amountCents: Math.max(0, total - paidByOthers)
+          amountCents: 0
         }
       ]
+      next[next.length - 1]!.amountCents = amountToCompleteWithBenefits(next, next.length - 1)
+      return next
     })
   }
 
@@ -184,12 +219,7 @@ function POSContent(): React.JSX.Element {
       { id: crypto.randomUUID(), method: 'cash_ves', amountCents: firstPart },
       { id: crypto.randomUUID(), method: 'cash_usd', amountCents: 0 }
     ]
-    const usdAmount = amountToCompleteSaleCents(
-      subtotal,
-      entries.map((p) => ({ amountCents: p.amountCents, currency: PAYMENT_CURRENCY[p.method] })),
-      1,
-      discountUsdRateBp
-    )
+    const usdAmount = amountToCompleteWithBenefits(entries, 1)
     entries[1]!.amountCents = usdAmount
     setPays(entries)
   }
@@ -198,10 +228,7 @@ function POSContent(): React.JSX.Element {
     setPays((current) => {
       const next = current.map((payment) => (payment.id === id ? { ...payment, method } : payment))
       if (next.length === 1) {
-        next[0]!.amountCents =
-          PAYMENT_CURRENCY[method] === 'USD'
-            ? Math.max(0, subtotal - Math.round((subtotal * discountUsdRateBp) / 10_000))
-            : subtotal
+        next[0]!.amountCents = amountToCompleteWithBenefits(next, 0)
       }
       return next
     })
@@ -210,15 +237,7 @@ function POSContent(): React.JSX.Element {
   function completePayment(id: string): void {
     setPays((current) => {
       const targetIndex = current.findIndex((payment) => payment.id === id)
-      const amount = amountToCompleteSaleCents(
-        subtotal,
-        current.map((payment) => ({
-          amountCents: payment.amountCents,
-          currency: PAYMENT_CURRENCY[payment.method]
-        })),
-        targetIndex,
-        discountUsdRateBp
-      )
+      const amount = amountToCompleteWithBenefits(current, targetIndex)
       return current.map((payment) =>
         payment.id === id ? { ...payment, amountCents: amount } : payment
       )
@@ -267,6 +286,7 @@ function POSContent(): React.JSX.Element {
             reference: null
           }
         }),
+        useStoreCredit,
         notes: null
       })
       toast.success(
@@ -287,6 +307,7 @@ function POSContent(): React.JSX.Element {
       })
       cart.clear()
       setPays([])
+      setUseStoreCredit(false)
       searchRef.current?.focus()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -312,15 +333,51 @@ function POSContent(): React.JSX.Element {
         <CustomerCedulaSlot
           customer={cart.customer}
           walkIn={cart.walkIn}
-          onCustomer={(c) => cart.setCustomer(c)}
-          onWalkIn={() => cart.setWalkIn(true)}
+          onCustomer={(c) => {
+            cart.setCustomer(c)
+            setUseStoreCredit(false)
+            setPays([])
+          }}
+          onWalkIn={() => {
+            cart.setWalkIn(true)
+            setUseStoreCredit(false)
+            setPays([])
+          }}
           onReady={() => setTimeout(() => searchRef.current?.focus(), 0)}
         />
+
+        {cart.customer && cart.customer.returnCreditBalance > 0 && (
+          <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div>
+              <div className="text-sm font-medium text-emerald-900">
+                Crédito por devolución disponible
+              </div>
+              <div className="text-xs text-emerald-700">
+                Se aplicará hasta {formatMoney(cart.customer.returnCreditBalance)} después de la
+                fidelización.
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant={useStoreCredit ? 'default' : 'outline'}
+              onClick={() => {
+                setUseStoreCredit((current) => !current)
+                setPays([])
+              }}
+            >
+              {useStoreCredit ? 'Crédito aplicado' : 'Usar crédito'}
+            </Button>
+          </div>
+        )}
 
         {(sellers ?? []).length > 0 && (
           <div className="flex items-center gap-2">
             <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <Select value={sellerId || NO_SELLER} onValueChange={(v) => setSellerId(v === NO_SELLER ? '' : v)}>
+            <Select
+              value={sellerId || NO_SELLER}
+              onValueChange={(v) => setSellerId(v === NO_SELLER ? '' : v)}
+            >
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="Vendedor (opcional)" />
               </SelectTrigger>
@@ -411,6 +468,20 @@ function POSContent(): React.JSX.Element {
                   rate={rate}
                 />
               )}
+              {benefits.fidelityAppliedCents > 0 && (
+                <TotalRow
+                  label={`Fidelización (${formatMoney(FIDELITY_REWARD_CENTS)})`}
+                  cents={-benefits.fidelityAppliedCents}
+                  rate={rate}
+                />
+              )}
+              {benefits.creditAppliedCents > 0 && (
+                <TotalRow
+                  label="Crédito a favor"
+                  cents={-benefits.creditAppliedCents}
+                  rate={rate}
+                />
+              )}
               <div className="flex items-center justify-between border-t pt-2 text-lg font-bold">
                 <span>Total</span>
                 <div className="text-right">
@@ -463,7 +534,9 @@ function POSContent(): React.JSX.Element {
                         <SelectItem
                           key={m.value}
                           value={m.value}
-                          disabled={pays.some((other) => other.id !== p.id && other.method === m.value)}
+                          disabled={pays.some(
+                            (other) => other.id !== p.id && other.method === m.value
+                          )}
                         >
                           {m.label}
                         </SelectItem>
@@ -489,7 +562,9 @@ function POSContent(): React.JSX.Element {
                 {pays.length > 1 && (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] text-muted-foreground">
-                      {PAYMENT_CURRENCY[p.method] === 'VES' ? 'Pago en bolívares' : 'Pago en dólares'}
+                      {PAYMENT_CURRENCY[p.method] === 'VES'
+                        ? 'Pago en bolívares'
+                        : 'Pago en dólares'}
                     </span>
                     <Button
                       type="button"

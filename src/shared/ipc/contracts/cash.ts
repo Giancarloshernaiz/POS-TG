@@ -78,6 +78,20 @@ export const cashContract = {
     output: cashReport,
     errors: ['NOT_AUTHENTICATED', 'NOT_FOUND'] as const
   },
+  history: {
+    kind: 'request',
+    channel: 'cash.history',
+    input: z.object({
+      search: z.string().optional(),
+      from: z.number().int().optional(),
+      to: z.number().int().optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+      offset: z.number().int().nonnegative().default(0),
+      sessionId: z.string()
+    }),
+    output: z.object({ items: z.array(cashReport), total: z.number() }),
+    errors: ['NOT_AUTHENTICATED', 'FORBIDDEN'] as const
+  },
   close: {
     kind: 'request',
     channel: 'cash.close',

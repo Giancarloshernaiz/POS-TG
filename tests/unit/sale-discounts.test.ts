@@ -2,18 +2,25 @@ import { describe, expect, it } from 'vitest'
 import {
   amountToCompleteSaleCents,
   paidShareForReturnCents,
+  customerBenefitsCents,
   totalAfterUsdDiscountCents,
   usdPaymentDiscountCents
 } from '../../src/shared/sale-discounts'
 
 describe('descuentos por pago USD', () => {
   it('descuenta todo el subtotal en una venta USD', () => {
-    expect(usdPaymentDiscountCents(10_000, [{ amountCents: 9_000, currency: 'USD' }], 1_000)).toBe(1_000)
-    expect(totalAfterUsdDiscountCents(10_000, [{ amountCents: 9_000, currency: 'USD' }], 1_000)).toBe(9_000)
+    expect(usdPaymentDiscountCents(10_000, [{ amountCents: 9_000, currency: 'USD' }], 1_000)).toBe(
+      1_000
+    )
+    expect(
+      totalAfterUsdDiscountCents(10_000, [{ amountCents: 9_000, currency: 'USD' }], 1_000)
+    ).toBe(9_000)
   })
 
   it('no descuenta ventas pagadas solo en bolivares', () => {
-    expect(usdPaymentDiscountCents(10_000, [{ amountCents: 10_000, currency: 'VES' }], 1_000)).toBe(0)
+    expect(usdPaymentDiscountCents(10_000, [{ amountCents: 10_000, currency: 'VES' }], 1_000)).toBe(
+      0
+    )
   })
 
   it('en mixto descuenta solo la fraccion USD', () => {
@@ -49,5 +56,17 @@ describe('descuentos por pago USD', () => {
   it('devuelve el total exacto pagado, no el valor previo al descuento global', () => {
     expect(paidShareForReturnCents(10_000, 10_000, 9_000)).toBe(9_000)
     expect(paidShareForReturnCents(2_500, 10_000, 9_000)).toBe(2_250)
+  })
+
+  it('aplica fidelidad antes del crédito por devolución', () => {
+    expect(customerBenefitsCents(5_000, 3_000, 1_500, true)).toEqual({
+      fidelityAppliedCents: 3_000,
+      creditAppliedCents: 1_500,
+      totalCents: 500
+    })
+  })
+
+  it('no redime fidelidad en compras menores a 30 dólares', () => {
+    expect(customerBenefitsCents(2_999, 3_000, 0, false).fidelityAppliedCents).toBe(0)
   })
 })

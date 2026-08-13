@@ -85,7 +85,9 @@ export function CustomersScreen(): React.JSX.Element {
               <TableHead>Nombre</TableHead>
               <TableHead>Documento</TableHead>
               <TableHead>Contacto</TableHead>
-              <TableHead className="text-right">Saldo</TableHead>
+              <TableHead className="text-right">Saldo a favor</TableHead>
+              <TableHead className="text-right">Acumulado fidelización</TableHead>
+              <TableHead className="text-right">Deuda</TableHead>
               <TableHead className="text-right">Límite</TableHead>
               <TableHead></TableHead>
             </TableRow>
@@ -93,14 +95,14 @@ export function CustomersScreen(): React.JSX.Element {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center">
+                <TableCell colSpan={8} className="text-center">
                   <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && data?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
                   Sin clientes.
                 </TableCell>
               </TableRow>
@@ -121,10 +123,31 @@ export function CustomersScreen(): React.JSX.Element {
                   )}
                 </TableCell>
                 <TableCell className="text-right">
+                  <div
+                    className={
+                      c.favorBalance > 0
+                        ? 'font-mono font-semibold text-emerald-700'
+                        : 'font-mono text-muted-foreground'
+                    }
+                  >
+                    {formatMoney(c.favorBalance)}
+                  </div>
+                  {c.favorBalance > 0 && (
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">
+                      Dev. {formatMoney(c.returnCreditBalance)} · Fidel.{' '}
+                      {formatMoney(c.fidelityBalance)}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="font-mono">{formatMoney(c.fidelityAccumulated)}</div>
+                  <div className="text-[10px] text-muted-foreground">de $420.00</div>
+                </TableCell>
+                <TableCell className="text-right">
                   {c.currentBalance > 0 ? (
                     <DualPrice cents={c.currentBalance} className="text-rose-600" />
                   ) : (
-                    <span className="font-mono text-muted-foreground">—</span>
+                    <span className="font-mono text-muted-foreground">{formatMoney(0)}</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right">

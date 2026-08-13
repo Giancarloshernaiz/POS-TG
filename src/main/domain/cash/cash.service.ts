@@ -1,5 +1,5 @@
 import { ulid } from 'ulid'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, like, lte, sql, type SQL } from 'drizzle-orm'
 import { cashSessions, cashMovements, sales, payments, users } from '@main/infrastructure/db/schema'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 
@@ -185,6 +185,43 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
     closingAmount: session.s.closingAmount,
     overShort: session.s.overShortAmount
   }
+}
+
+export async function listClosedReports(
+  db: Db,
+  input: {
+    search?: string | undefined
+    from?: number | undefined
+    to?: number | undefined
+    limit: number
+    offset: number
+  }
+): Promise<{ items: CashReport[]; total: number }> {
+  const conditions: SQL[] = [inArray(cashSessions.status, ['closed', 'reconciled'])]
+  if (input.search?.trim()) conditions.push(like(users.fullName, `%${input.search.trim()}%`))
+  if (input.from !== undefined) conditions.push(gte(cashSessions.closedAt, input.from))
+  if (input.to !== undefined) conditions.push(lte(cashSessions.closedAt, input.to))
+  const where = and(...conditions)
+
+  const rows = await db
+    .select({ id: cashSessions.id })
+    .from(cashSessions)
+    .innerJoin(users, eq(cashSessions.userId, users.id))
+    .where(where)
+    .orderBy(desc(cashSessions.closedAt))
+    .limit(input.limit)
+    .offset(input.offset)
+    .all()
+  const countRow = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(cashSessions)
+    .innerJoin(users, eq(cashSessions.userId, users.id))
+    .where(where)
+    .get()
+
+  const items: CashReport[] = []
+  for (const row of rows) items.push(await buildReport(db, row.id))
+  return { items, total: countRow?.count ?? 0 }
 }
 
 export async function closeSession(

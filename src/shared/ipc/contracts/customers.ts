@@ -13,6 +13,10 @@ const customer = z.object({
   creditLimit: z.number(),
   currentBalance: z.number(),
   specialDiscountBp: z.number(),
+  favorBalance: z.number().default(0),
+  returnCreditBalance: z.number().default(0),
+  fidelityBalance: z.number().default(0),
+  fidelityAccumulated: z.number().default(0),
   active: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number()

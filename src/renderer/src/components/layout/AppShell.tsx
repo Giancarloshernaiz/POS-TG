@@ -10,7 +10,8 @@ import {
   Wallet,
   LayoutDashboard,
   PackageOpen,
-  PackageCheck
+  PackageCheck,
+  History
 } from 'lucide-react'
 import { useAuth } from '@renderer/stores/auth'
 import { api } from '@renderer/lib/api'
@@ -30,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
   { key: 'pos', label: 'Punto de venta', icon: Receipt, permission: 'sales.create' },
   { key: 'cash', label: 'Caja', icon: Wallet, permission: 'cash.open' },
+  { key: 'cash-history', label: 'Historial de cajas', icon: History, permission: 'reports.z' },
   { key: 'products', label: 'Productos', icon: PackageOpen, permission: 'products.view' },
   { key: 'inventory', label: 'Inventario', icon: Boxes, permission: 'inventory.view' },
   {

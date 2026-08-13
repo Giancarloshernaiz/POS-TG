@@ -59,6 +59,8 @@ const sale = z.object({
   discountTotal: z.number(),
   usdDiscountTotal: z.number().default(0),
   usdDiscountRateBp: z.number().default(0),
+  creditApplied: z.number().default(0),
+  fidelityApplied: z.number().default(0),
   taxTotal: z.number(),
   igtfTotal: z.number(),
   total: z.number(),
@@ -105,7 +107,8 @@ export const salesContract = {
       // Comisionista atribuido a la venta (opcional).
       sellerId: z.string().nullable().optional(),
       lines: z.array(saleLineInput).min(1),
-      payments: z.array(paymentInput).min(1),
+      payments: z.array(paymentInput),
+      useStoreCredit: z.boolean().default(false),
       notes: z.string().nullable().optional()
     }),
     output: z.object({ sale, changeUsd: z.number() }),

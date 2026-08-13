@@ -5,12 +5,15 @@ import {
   setPrinterConfig,
   printTest,
   printSaleTicket,
+  printCashReport,
   openCashDrawer,
   type PrinterConfig
 } from '@main/infrastructure/printer/printer.service'
 import { getSetting, SETTINGS_KEYS } from '@main/infrastructure/settings/settings.service'
 import { getIdentity } from '@main/infrastructure/device/identity.service'
 import { buildSaleDto } from './sales.handler'
+import { buildReport } from '@main/domain/cash/cash.service'
+import { getDb } from '@main/infrastructure/db/client'
 import { audit } from '@main/audit/logger'
 import { PERMISSIONS } from '@shared/auth/permissions'
 import { printContract } from '@shared/ipc/contracts/print'
@@ -53,6 +56,15 @@ export const printHandlers = {
       cajaLabel: identity.nodeLabel,
       esCopia: input.esCopia
     })
+    return { ok: true }
+  },
+
+  async cashReport(input: Input<'cashReport'>): Promise<{ ok: true }> {
+    requirePermission(input.sessionId, PERMISSIONS.REPORTS_Z)
+    const report = await buildReport(getDb(), input.cashSessionId)
+    const store = await getSetting<StoreProfileDTO>(SETTINGS_KEYS.STORE_PROFILE)
+    const identity = await getIdentity()
+    await printCashReport(report, store, identity.nodeLabel)
     return { ok: true }
   },
 

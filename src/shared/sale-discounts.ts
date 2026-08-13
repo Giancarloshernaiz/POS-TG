@@ -68,3 +68,34 @@ export function paidShareForReturnCents(
   const ratio = Math.max(0, Math.min(1, salePaidCents / saleProductsNetCents))
   return Math.round(selectedNetCents * ratio)
 }
+
+export const FIDELITY_REWARD_CENTS = 3_000
+export const FIDELITY_THRESHOLD_CENTS = 42_000
+
+export type CustomerBenefits = {
+  fidelityAppliedCents: number
+  creditAppliedCents: number
+  totalCents: number
+}
+
+/** Misma precedencia de Tiendas Gala: fidelidad automática y luego crédito opcional. */
+export function customerBenefitsCents(
+  saleTotalCents: number,
+  fidelityBalanceCents: number,
+  returnCreditBalanceCents: number,
+  useStoreCredit: boolean
+): CustomerBenefits {
+  const fidelityAppliedCents =
+    fidelityBalanceCents >= FIDELITY_REWARD_CENTS && saleTotalCents >= FIDELITY_REWARD_CENTS
+      ? FIDELITY_REWARD_CENTS
+      : 0
+  const afterFidelity = Math.max(0, saleTotalCents - fidelityAppliedCents)
+  const creditAppliedCents = useStoreCredit
+    ? Math.min(Math.max(0, returnCreditBalanceCents), afterFidelity)
+    : 0
+  return {
+    fidelityAppliedCents,
+    creditAppliedCents,
+    totalCents: Math.max(0, afterFidelity - creditAppliedCents)
+  }
+}
