@@ -27,7 +27,6 @@ import { OpenCashForm } from '@renderer/features/cash/OpenCashForm'
 import { useAuth } from '@renderer/stores/auth'
 import { findByCode, useCreateSale, printTicket, useSellers, useDiscountUsd } from './hooks'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
-import { QuickProductCreate } from './QuickProductCreate'
 import { formatMoney, formatVes } from '@renderer/lib/money'
 import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethods'
 import { PAYMENT_CURRENCY } from '@shared/payment'
@@ -93,10 +92,8 @@ function POSContent(): React.JSX.Element {
   }, [customerReady, cart])
 
   const [code, setCode] = useState('')
-  const [unknownCode, setUnknownCode] = useState<string | null>(null) // quick-create on unknown scan
   const [pays, setPays] = useState<PayEntry[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const canCreateProduct = useAuth((s) => s.hasPermission('products.create'))
 
   // ---- Totals ----
   const grossSubtotal = cart.lines.reduce((s, l) => s + l.unitPrice * l.qty, 0)
@@ -178,13 +175,11 @@ function POSContent(): React.JSX.Element {
     try {
       const product = await findByCode(c)
       if (!product) {
-        if (canCreateProduct) {
-          // Auto-open quick-create with the scanned code prefilled. After save it
-          // gets added to the cart in onCreated.
-          setUnknownCode(c)
-        } else {
-          toast.error('Producto no encontrado (sin permiso para crearlo)')
-        }
+        toast.error(
+          'Producto no encontrado. Debe crearse en Tiendas Gala y sincronizarse con el POS.'
+        )
+        setCode('')
+        searchRef.current?.focus()
         return
       }
       addProduct(product)
@@ -610,24 +605,6 @@ function POSContent(): React.JSX.Element {
           </CardContent>
         </Card>
       </div>
-
-      {unknownCode && (
-        <QuickProductCreate
-          key={unknownCode}
-          open
-          initialCode={unknownCode}
-          onClose={() => {
-            setUnknownCode(null)
-            searchRef.current?.focus()
-          }}
-          onCreated={(p) => {
-            addProduct(p)
-            setUnknownCode(null)
-            setCode('')
-            searchRef.current?.focus()
-          }}
-        />
-      )}
     </div>
   )
 }

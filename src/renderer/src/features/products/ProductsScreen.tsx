@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Search, Pencil, Tag, Loader2, Trash2 } from 'lucide-react'
+import { Search, Pencil, Tag, Loader2, Trash2 } from 'lucide-react'
 import { useProducts, useCategories, useDeleteProduct } from './hooks'
 import { useAuth } from '@renderer/stores/auth'
 import { ProductForm } from './ProductForm'
@@ -68,10 +68,6 @@ export function ProductsScreen(): React.JSX.Element {
   })
   const { data: categories = [] } = useCategories()
 
-  function openCreate(): void {
-    setEditing(null)
-    setFormOpen(true)
-  }
   function openEdit(p: ProductDTO): void {
     setEditing(p)
     setFormOpen(true)
@@ -90,10 +86,6 @@ export function ProductsScreen(): React.JSX.Element {
           <Button variant="outline" onClick={() => setCategoryOpen(true)}>
             <Tag className="h-4 w-4" />
             Categorías
-          </Button>
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Nuevo producto
           </Button>
         </div>
       </div>
@@ -214,7 +206,16 @@ export function ProductsScreen(): React.JSX.Element {
         </Table>
       </div>
 
-      <ProductForm open={formOpen} onOpenChange={setFormOpen} product={editing} />
+      {editing && (
+        <ProductForm
+          open={formOpen}
+          onOpenChange={(open) => {
+            setFormOpen(open)
+            if (!open) setEditing(null)
+          }}
+          product={editing}
+        />
+      )}
       <CategoryDialog open={categoryOpen} onOpenChange={setCategoryOpen} />
 
       <Dialog open={porBorrar !== null} onOpenChange={(o) => !o && setPorBorrar(null)}>
@@ -222,9 +223,9 @@ export function ProductsScreen(): React.JSX.Element {
           <DialogHeader>
             <DialogTitle>Dar de baja «{porBorrar?.name}»</DialogTitle>
             <DialogDescription>
-              La baja se hace en AgroOne, que administra el catálogo. Si el producto nunca se
-              vendió ni se despachó, se elimina definitivamente; si tiene historial, se desactiva
-              para no perder los movimientos pasados. En ambos casos deja de aparecer en la caja.
+              La baja se hace en AgroOne, que administra el catálogo. Si el producto nunca se vendió
+              ni se despachó, se elimina definitivamente; si tiene historial, se desactiva para no
+              perder los movimientos pasados. En ambos casos deja de aparecer en la caja.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -38,23 +38,6 @@ export function useProducts(input: {
   })
 }
 
-export function useCreateProduct(): ReturnType<
-  typeof useMutation<ProductDTO, Error, Parameters<typeof api.catalog.createProduct>[0]>
-> {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (input) => {
-      const res = await api.catalog.createProduct(input)
-      if (!res.ok) throw new Error(res.error.code)
-      return res.data
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['products'] })
-      void qc.invalidateQueries({ queryKey: ['inventory'] })
-    }
-  })
-}
-
 export function useDeleteProduct(): ReturnType<
   typeof useMutation<
     { modo: 'eliminado' | 'desactivado'; message: string },

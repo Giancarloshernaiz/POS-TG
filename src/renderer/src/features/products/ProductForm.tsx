@@ -24,7 +24,7 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
-import { useCategories, useCreateProduct, useUpdateProduct, useCreateCategory } from './hooks'
+import { useCategories, useUpdateProduct, useCreateCategory } from './hooks'
 import { fromCents, toCents } from '@renderer/lib/money'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 
@@ -55,12 +55,11 @@ type FormValues = z.infer<typeof schema>
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  product?: ProductDTO | null
+  product: ProductDTO
 }
 
 export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.Element {
   const { data: categories = [] } = useCategories()
-  const createMut = useCreateProduct()
   const updateMut = useUpdateProduct()
   const createCategoryMut = useCreateCategory()
   const [submitting, setSubmitting] = useState(false)
@@ -95,30 +94,26 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
 
   useEffect(() => {
     if (open) {
-      reset(
-        product
-          ? {
-              sku: product.sku,
-              barcode: product.barcode ?? '',
-              name: product.name,
-              description: product.description ?? '',
-              categoryId: product.categoryId ?? NONE,
-              basePrice: fromCents(product.basePrice),
-              costPrice: fromCents(product.costPrice ?? 0),
-              unitOfMeasure: product.unitOfMeasure,
-              lowStockThreshold: product.lowStockThreshold ?? undefined,
-              discountKind: product.discountType,
-              discountAmount:
-                product.discountType === 'percent'
-                  ? product.discountValue / 100
-                  : product.discountType === 'amount'
-                    ? product.discountValue / 100
-                    : undefined,
-              tracksSerial: product.tracksSerial,
-              active: product.active
-            }
-          : undefined
-      )
+      reset({
+        sku: product.sku,
+        barcode: product.barcode ?? '',
+        name: product.name,
+        description: product.description ?? '',
+        categoryId: product.categoryId ?? NONE,
+        basePrice: fromCents(product.basePrice),
+        costPrice: fromCents(product.costPrice ?? 0),
+        unitOfMeasure: product.unitOfMeasure,
+        lowStockThreshold: product.lowStockThreshold ?? undefined,
+        discountKind: product.discountType,
+        discountAmount:
+          product.discountType === 'percent'
+            ? product.discountValue / 100
+            : product.discountType === 'amount'
+              ? product.discountValue / 100
+              : undefined,
+        tracksSerial: product.tracksSerial,
+        active: product.active
+      })
     }
   }, [open, product, reset])
 
@@ -166,13 +161,8 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
         tracksSerial: values.tracksSerial,
         active: values.active
       }
-      if (product) {
-        await updateMut.mutateAsync({ id: product.id, ...payload })
-        toast.success('Producto actualizado')
-      } else {
-        await createMut.mutateAsync(payload)
-        toast.success('Producto creado')
-      }
+      await updateMut.mutateAsync({ id: product.id, ...payload })
+      toast.success('Producto actualizado')
       onOpenChange(false)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -202,12 +192,8 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{product ? 'Editar producto' : 'Nuevo producto'}</DialogTitle>
-          <DialogDescription>
-            {product
-              ? `SKU original: ${product.sku}`
-              : 'Completa los datos básicos. Stock se gestiona desde inventario o recepción.'}
-          </DialogDescription>
+          <DialogTitle>Editar producto</DialogTitle>
+          <DialogDescription>SKU original: {product.sku}</DialogDescription>
         </DialogHeader>
 
         <form
@@ -451,7 +437,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {product ? 'Guardar cambios' : 'Crear producto'}
+              Guardar cambios
             </Button>
           </DialogFooter>
         </form>

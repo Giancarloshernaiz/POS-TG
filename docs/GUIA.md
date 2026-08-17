@@ -207,17 +207,13 @@ Para probar seed desde cero: cerrá la app, borrá `%APPDATA%/pos-tg/pos.sqlite`
 2. Intentá login con contraseña incorrecta 6 veces seguidas
 3. **Verificá:** al 6º intento → "Demasiados intentos. Esperá 1 minuto."
 
-### Test 3 — Productos + categorías
+### Test 3 — Productos sincronizados
 
-1. Sidebar → **Productos**
-2. Botón "Categorías" → crear "Electrónica" y "Ropa"
-3. "Nuevo producto":
-   - SKU `SAM-A52`, nombre `Samsung Galaxy A52`, categoría Electrónica
-   - Precio venta `250`, costo `200`, IVA `16`
-   - **Marcá "Rastrea seriales / IMEI"**
-   - Crear
-4. Crear otro: SKU `CAM-001`, nombre `Camiseta`, categoría Ropa, precio `15`, SIN seriales
-5. **Verificá:** ambos aparecen en la tabla; filtro por categoría funciona; búsqueda por SKU funciona; "Samsung" tiene badge "Serial"
+1. Crear los productos de prueba en **Tiendas Gala**.
+2. Sincronizar la caja desde **Ajustes**.
+3. Sidebar → **Productos**.
+4. **Verificá:** los productos aparecen en la tabla; el filtro por categoría y la búsqueda por SKU funcionan.
+5. **Verificá:** el POS permite editar productos existentes, pero no muestra ninguna opción para crear productos.
 
 ### Test 4 — Proveedores
 

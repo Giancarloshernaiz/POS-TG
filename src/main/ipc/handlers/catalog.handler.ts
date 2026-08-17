@@ -18,7 +18,6 @@ import type {
 } from '@main/infrastructure/sync/p2p/reducers/catalog.reducer'
 import { getIdentity, isProvisioned } from '@main/infrastructure/device/identity.service'
 import {
-  createProductInAgro,
   updateProductInAgro,
   createCategoryInAgro,
   updateCategoryInAgro,
@@ -481,87 +480,11 @@ export const catalogHandlers = {
   },
 
   async createProduct(input: Input<'createProduct'>): Promise<ProductDTO> {
-    const db = getDb()
-    const dupSku = await db.select().from(products).where(eq(products.sku, input.sku)).get()
-    if (dupSku) throw new CatalogError('DUPLICATE_SKU', 'SKU ya existe')
-    if (input.barcode) {
-      const dupBc = await db
-        .select()
-        .from(products)
-        .where(eq(products.barcode, input.barcode))
-        .get()
-      if (dupBc) throw new CatalogError('DUPLICATE_BARCODE', 'código de barras ya existe')
-    }
-
-    // El producto se da de alta en AgroOne y recién después se proyecta local,
-    // ya con `agroId`. Sin esto, cualquier venta que lo incluya nunca podría
-    // sincronizarse (push.service la marcaría "producto sin mapeo AgroOne").
-    if (!input.categoryId) {
-      throw new CatalogError(
-        'CATEGORY_REQUIRED',
-        'AgroOne exige categoría para dar de alta un producto.'
-      )
-    }
-    const baseUrl = await requireAgroBaseUrl()
-    const categoriaAgroId = await requireCategoryAgroId(db, input.categoryId)
-    // AgroOne exige `codigo_barras` no vacío; si el alta vino sin código de
-    // barras (carga manual, no escaneo), se usa el SKU como código.
-    const codigoBarras = input.barcode?.trim() || input.sku
-    let agroId: number
-    let agroBarcode: string
-    try {
-      const created = await createProductInAgro(baseUrl, {
-        codigo: input.sku,
-        codigoBarras,
-        nombre: input.name,
-        descripcion: input.description ?? null,
-        categoriaAgroId,
-        unidadMedida: input.unitOfMeasure,
-        precioVentaCents: input.basePrice,
-        costoPromedioCents: input.costPrice ?? null,
-        stockMinimo: input.lowStockThreshold ?? null
-      })
-      agroId = created.agroId
-      agroBarcode = created.codigoBarras
-    } catch (err) {
-      throw toCatalogSyncError(err, 'crear el producto')
-    }
-
-    const now = Date.now()
-    const id = ulid()
-    await db
-      .insert(products)
-      .values({
-        id,
-        sku: input.sku,
-        // El máster es autoritativo del código de barras (puede haber asignado
-        // uno propio de la secuencia GALA_EAN13).
-        barcode: agroBarcode ?? input.barcode ?? null,
-        name: input.name,
-        description: input.description ?? null,
-        categoryId: input.categoryId ?? null,
-        basePrice: input.basePrice,
-        costPrice: input.costPrice ?? null,
-        taxRateBp: input.taxRateBp,
-        // Rastreo por serial/IMEI desactivado: todo se maneja por unidades.
-        // Se ignora lo que mande el cliente en vez de confiar en la UI.
-        tracksSerial: false,
-        unitOfMeasure: input.unitOfMeasure,
-        lowStockThreshold: input.lowStockThreshold ?? null,
-        discountType: input.discountType,
-        discountValue: input.discountValue,
-        agroId,
-        active: input.active,
-        createdAt: now,
-        updatedAt: now
-      })
-      .run()
-    await db
-      .insert(stockLevels)
-      .values({ productId: id, locationId: 'main', quantity: 0, updatedAt: now })
-      .run()
-    await emitProductUpsertEvent(db, id)
-    return fetchProductById(id)
+    void input
+    throw new CatalogError(
+      'FORBIDDEN',
+      'La creación de productos está deshabilitada en el POS. Crea el producto en Tiendas Gala y sincroniza la caja.'
+    )
   },
 
   /**
