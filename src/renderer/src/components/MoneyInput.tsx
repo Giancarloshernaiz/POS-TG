@@ -11,6 +11,7 @@ type Props = {
   id?: string
   autoFocus?: boolean
   className?: string
+  referenceLabel?: string
 }
 
 function num(t: string): number {
@@ -41,7 +42,8 @@ export function MoneyInput({
   disabled,
   id,
   autoFocus,
-  className
+  className,
+  referenceLabel = '$'
 }: Props): React.JSX.Element {
   const rate = useFx((s) => s.rate?.rate ?? null)
   const [usd, setUsd] = useState<string>(() => usdStr(valueCents))
@@ -83,7 +85,7 @@ export function MoneyInput({
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-            $
+            {referenceLabel}
           </span>
           <Input
             id={id}
@@ -91,7 +93,7 @@ export function MoneyInput({
             step="0.01"
             min={0}
             inputMode="decimal"
-            className="pl-6"
+            className={referenceLabel.length > 1 ? 'pl-10' : 'pl-6'}
             value={usd}
             onChange={(e) => handleUsd(e.target.value)}
             disabled={disabled}
@@ -118,7 +120,7 @@ export function MoneyInput({
       </div>
       {!rate && (
         <p className="mt-1 text-[10px] text-muted-foreground">
-          Sin tasa BCV — solo USD. Carga la tasa en Configuración.
+          Sin tasa BCV — solo {referenceLabel}. Carga la tasa en Configuración.
         </p>
       )}
     </div>

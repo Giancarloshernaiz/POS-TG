@@ -12,7 +12,11 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { RIF_TYPES } from '@shared/fiscal'
-import { findCustomerByDoc } from '@renderer/features/customers/hooks'
+import {
+  findCustomerByDoc,
+  searchCustomers,
+  useCustomers
+} from '@renderer/features/customers/hooks'
 import { QuickCustomerCreate } from '@renderer/features/customers/QuickCustomerCreate'
 import type { CustomerDTO } from '@shared/ipc/contracts/customers'
 
@@ -37,8 +41,20 @@ export function CustomerCedulaSlot({
   const [docType, setDocType] = useState<DocType>('V')
   const [docId, setDocId] = useState('')
   const [searching, setSearching] = useState(false)
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [quickCreate, setQuickCreate] = useState<{ docType: DocType; docId: string } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { data: suggestions = [], isFetching: loadingSuggestions } = useCustomers({
+    search: docId.trim() || undefined,
+    activeOnly: true
+  })
+
+  function selectCustomer(selected: CustomerDTO): void {
+    setSuggestionsOpen(false)
+    setDocId('')
+    onCustomer(selected)
+    onReady()
+  }
 
   // ── Chip state (customer selected OR walk-in) ─────────────────────────────
   if (customer) {
@@ -107,10 +123,18 @@ export function CustomerCedulaSlot({
     try {
       const found = await findCustomerByDoc(docType, id)
       if (found) {
-        onCustomer(found)
-        onReady()
+        selectCustomer(found)
       } else {
-        setQuickCreate({ docType, docId: id })
+        const matches = await searchCustomers(id)
+        if (matches.length === 1) {
+          selectCustomer(matches[0]!)
+        } else if (matches.length > 1) {
+          setSuggestionsOpen(true)
+        } else if (/^\d+$/.test(id)) {
+          setQuickCreate({ docType, docId: id })
+        } else {
+          toast.error('No se encontró ningún cliente con ese nombre o documento')
+        }
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -161,11 +185,50 @@ export function CustomerCedulaSlot({
             ref={inputRef}
             autoFocus
             value={docId}
-            onChange={(e) => setDocId(e.target.value)}
-            placeholder="Cédula o RIF (Enter para buscar)"
+            onChange={(e) => {
+              setDocId(e.target.value)
+              setSuggestionsOpen(Boolean(e.target.value.trim()))
+            }}
+            onFocus={() => setSuggestionsOpen(Boolean(docId.trim()))}
+            onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}
+            placeholder="Nombre, cédula o RIF (Enter para buscar)"
             className="pl-8"
-            inputMode="numeric"
           />
+          {suggestionsOpen && docId.trim() && (
+            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md border bg-popover p-1 shadow-lg">
+              {loadingSuggestions ? (
+                <div className="flex items-center justify-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Buscando clientes…
+                </div>
+              ) : suggestions.length > 0 ? (
+                suggestions.slice(0, 8).map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectCustomer(candidate)}
+                    className="flex w-full items-center justify-between gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{candidate.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {[candidate.docType, candidate.docId].filter(Boolean).join('-') ||
+                          'Sin documento'}
+                        {candidate.phone ? ` · ${candidate.phone}` : ''}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs font-medium text-emerald-700">
+                      Ref. {(candidate.favorBalance / 100).toFixed(2)} a favor
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  Sin coincidencias. Presiona Enter para crear por documento.
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <Button type="submit" disabled={searching}>
           {searching ? (
@@ -177,7 +240,7 @@ export function CustomerCedulaSlot({
         </Button>
       </form>
       <p className="text-xs text-muted-foreground">
-        Si no existe, se abre un formulario rápido para registrarlo.
+        Busca manualmente por nombre o documento. Si el documento no existe, podrás registrarlo.
       </p>
 
       {quickCreate && (

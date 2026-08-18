@@ -1,6 +1,15 @@
 import { z } from 'zod'
 
-const method = z.enum(['cash_ves', 'cash_usd', 'card', 'pago_movil', 'transfer', 'zelle', 'credit'])
+const method = z.enum([
+  'cash_ves',
+  'cash_usd',
+  'card',
+  'pago_movil',
+  'transfer',
+  'zelle',
+  'binance',
+  'credit'
+])
 
 const saleLineInput = z.object({
   productId: z.string(),

@@ -83,7 +83,7 @@ export const payments = sqliteTable(
       .notNull()
       .references(() => sales.id, { onDelete: 'cascade' }),
     method: text('method', {
-      enum: ['cash_ves', 'cash_usd', 'card', 'pago_movil', 'transfer', 'zelle', 'credit']
+      enum: ['cash_ves', 'cash_usd', 'card', 'pago_movil', 'transfer', 'zelle', 'binance', 'credit']
     }).notNull(),
     currency: text('currency', { enum: ['USD', 'VES'] }).notNull(),
     isDivisa: integer('is_divisa', { mode: 'boolean' }).notNull().default(false),

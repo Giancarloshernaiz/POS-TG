@@ -5,6 +5,7 @@ export type PaymentMethod =
   | 'pago_movil'
   | 'transfer'
   | 'zelle'
+  | 'binance'
   | 'credit'
 
 export const PAYMENT_METHODS: {
@@ -14,11 +15,12 @@ export const PAYMENT_METHODS: {
   isDivisa: boolean
 }[] = [
   { value: 'cash_ves', label: 'Efectivo Bs', currency: 'VES', isDivisa: false },
-  { value: 'cash_usd', label: 'Efectivo $', currency: 'USD', isDivisa: true },
+  { value: 'cash_usd', label: 'Efectivo Ref.', currency: 'USD', isDivisa: true },
   { value: 'card', label: 'Tarjeta / Punto', currency: 'VES', isDivisa: false },
   { value: 'pago_movil', label: 'Pago móvil', currency: 'VES', isDivisa: false },
   { value: 'transfer', label: 'Transferencia', currency: 'VES', isDivisa: false },
   { value: 'zelle', label: 'Zelle', currency: 'USD', isDivisa: true },
+  { value: 'binance', label: 'Binance', currency: 'USD', isDivisa: true },
   { value: 'credit', label: 'Crédito (cuenta)', currency: 'USD', isDivisa: false }
 ]
 

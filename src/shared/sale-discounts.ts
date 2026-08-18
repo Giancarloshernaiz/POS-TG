@@ -3,6 +3,11 @@ export type DiscountPayment = {
   currency: 'USD' | 'VES'
 }
 
+/** El crédito por devolución y el descuento por pago en referencia son excluyentes. */
+export function usdDiscountRateForSale(rateBp: number, useStoreCredit: boolean): number {
+  return useStoreCredit ? 0 : Math.max(0, rateBp)
+}
+
 /**
  * Regla de Tiendas Gala: una venta completamente USD descuenta el porcentaje
  * sobre todos los productos; en una venta mixta, solo sobre la fraccion USD.

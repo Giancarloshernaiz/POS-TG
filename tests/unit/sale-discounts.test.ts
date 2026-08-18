@@ -4,6 +4,7 @@ import {
   paidShareForReturnCents,
   customerBenefitsCents,
   totalAfterUsdDiscountCents,
+  usdDiscountRateForSale,
   usdPaymentDiscountCents
 } from '../../src/shared/sale-discounts'
 
@@ -21,6 +22,21 @@ describe('descuentos por pago USD', () => {
     expect(usdPaymentDiscountCents(10_000, [{ amountCents: 10_000, currency: 'VES' }], 1_000)).toBe(
       0
     )
+  })
+
+  it('no aplica el 20% por pago USD cuando se usa credito a favor', () => {
+    const effectiveRate = usdDiscountRateForSale(2_000, true)
+    expect(effectiveRate).toBe(0)
+    expect(
+      usdPaymentDiscountCents(10_000, [{ amountCents: 10_000, currency: 'USD' }], effectiveRate)
+    ).toBe(0)
+  })
+
+  it('mantiene el 20% por pago USD cuando no se usa credito a favor', () => {
+    const effectiveRate = usdDiscountRateForSale(2_000, false)
+    expect(
+      usdPaymentDiscountCents(10_000, [{ amountCents: 8_000, currency: 'USD' }], effectiveRate)
+    ).toBe(2_000)
   })
 
   it('en mixto descuenta solo la fraccion USD', () => {

@@ -85,6 +85,12 @@ export async function findCustomerByDoc(
   return res.data
 }
 
+export async function searchCustomers(search: string): Promise<CustomerDTO[]> {
+  const res = await api.customers.list({ search, activeOnly: true, withDebtOnly: false })
+  if (!res.ok) throw new Error(res.error.message)
+  return res.data
+}
+
 export function useRegisterArPayment(): ReturnType<
   typeof useMutation<
     CustomerDTO,

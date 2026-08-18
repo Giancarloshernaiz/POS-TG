@@ -5,6 +5,7 @@ export type PaymentMethod =
   | 'pago_movil'
   | 'transfer'
   | 'zelle'
+  | 'binance'
   | 'credit'
 
 export const PAYMENT_DIVISA: Record<PaymentMethod, boolean> = {
@@ -14,6 +15,7 @@ export const PAYMENT_DIVISA: Record<PaymentMethod, boolean> = {
   pago_movil: false,
   transfer: false,
   zelle: true,
+  binance: true,
   credit: false
 }
 
@@ -24,15 +26,17 @@ export const PAYMENT_CURRENCY: Record<PaymentMethod, 'USD' | 'VES'> = {
   pago_movil: 'VES',
   transfer: 'VES',
   zelle: 'USD',
+  binance: 'USD',
   credit: 'USD'
 }
 
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cash_ves: 'Efectivo Bs',
-  cash_usd: 'Efectivo $',
+  cash_usd: 'Efectivo Ref.',
   card: 'Tarjeta / Punto',
   pago_movil: 'Pago móvil',
   transfer: 'Transferencia',
   zelle: 'Zelle',
+  binance: 'Binance',
   credit: 'Crédito (cuenta)'
 }

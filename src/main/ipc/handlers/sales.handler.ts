@@ -31,6 +31,7 @@ import {
   customerBenefitsCents,
   FIDELITY_REWARD_CENTS,
   FIDELITY_THRESHOLD_CENTS,
+  usdDiscountRateForSale,
   usdPaymentDiscountCents
 } from '@shared/sale-discounts'
 import { getSetting, SETTINGS_KEYS } from '@main/infrastructure/settings/settings.service'
@@ -292,7 +293,10 @@ export const salesHandlers = {
     })
 
     const discountSetting = await getSetting<{ rateBp: number }>(SETTINGS_KEYS.DISCOUNT_USD)
-    const usdDiscountRateBp = discountSetting?.rateBp ?? 0
+    const usdDiscountRateBp = usdDiscountRateForSale(
+      discountSetting?.rateBp ?? 0,
+      input.useStoreCredit
+    )
     const usdDiscountTotal = usdPaymentDiscountCents(
       goodsTotal,
       computedPayments.map((p) => ({ amountCents: p.amountUsd, currency: p.currency })),

@@ -1,10 +1,26 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, Trash2, Plus, X, ShoppingCart, Loader2, UserRound } from 'lucide-react'
+import {
+  Trash2,
+  Plus,
+  X,
+  ShoppingCart,
+  Loader2,
+  UserRound,
+  CalendarDays,
+  ScanLine,
+  Banknote,
+  CreditCard,
+  Smartphone,
+  Landmark,
+  WalletCards,
+  CircleDollarSign
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Card, CardContent } from '@renderer/components/ui/card'
+import { Label } from '@renderer/components/ui/label'
 import {
   Table,
   TableBody,
@@ -34,7 +50,7 @@ import {
   useDiscountUsd
 } from './hooks'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
-import { formatMoney, formatVes } from '@renderer/lib/money'
+import { fromCents } from '@renderer/lib/money'
 import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethods'
 import { PAYMENT_CURRENCY } from '@shared/payment'
 import { MoneyInput } from '@renderer/components/MoneyInput'
@@ -43,6 +59,7 @@ import {
   customerBenefitsCents,
   FIDELITY_REWARD_CENTS,
   totalAfterUsdDiscountCents,
+  usdDiscountRateForSale,
   usdPaymentDiscountCents
 } from '@shared/sale-discounts'
 
@@ -51,6 +68,33 @@ import {
 const NO_SELLER = '__none__'
 
 type PayEntry = { id: string; method: PaymentMethod; amountCents: number }
+type CurrencyMode = 'USD' | 'VES' | 'MIXED'
+
+const PAYMENT_ICON: Record<PaymentMethod, typeof Banknote> = {
+  cash_ves: Banknote,
+  cash_usd: CircleDollarSign,
+  card: CreditCard,
+  pago_movil: Smartphone,
+  transfer: Landmark,
+  zelle: WalletCards,
+  binance: CircleDollarSign,
+  credit: CreditCard
+}
+
+function formatReference(cents: number): string {
+  return fromCents(cents).toLocaleString('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
+}
+
+function formatBolivares(cents: number, rate: number | null): string {
+  if (!rate) return '—'
+  return (fromCents(cents) * rate).toLocaleString('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
+}
 
 export function POSScreen(): React.JSX.Element {
   const { data: activeSession, isLoading } = useActiveSession()
@@ -79,6 +123,7 @@ function POSContent(): React.JSX.Element {
   const { data: sellers } = useSellers()
   const { data: discountUsd } = useDiscountUsd()
   const [sellerId, setSellerId] = useState<string>('')
+  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>('MIXED')
   const [useStoreCredit, setUseStoreCredit] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -143,7 +188,8 @@ function POSContent(): React.JSX.Element {
   const grossSubtotal = cart.lines.reduce((s, l) => s + l.unitPrice * l.qty, 0)
   const subtotal = cart.lines.reduce((s, l) => s + l.effectivePrice * l.qty, 0)
   const productDiscount = grossSubtotal - subtotal
-  const discountUsdRateBp = discountUsd?.rateBp ?? 0
+  const configuredDiscountUsdRateBp = discountUsd?.rateBp ?? 0
+  const discountUsdRateBp = usdDiscountRateForSale(configuredDiscountUsdRateBp, useStoreCredit)
   const discountPayments = pays.map((p) => ({
     amountCents: p.amountCents,
     currency: PAYMENT_CURRENCY[p.method]
@@ -164,6 +210,10 @@ function POSContent(): React.JSX.Element {
   const paid = pays.reduce((s, p) => s + p.amountCents, 0)
   const change = Math.max(0, paid - total)
   const remaining = Math.max(0, total - paid)
+  const paymentMethods = PAYMENT_METHODS.filter((method) => {
+    if (currencyMode === 'MIXED') return true
+    return method.currency === currencyMode
+  })
 
   function amountToCompleteWithBenefits(entries: PayEntry[], targetIndex: number): number {
     const paidByOthers = entries.reduce(
@@ -245,41 +295,14 @@ function POSContent(): React.JSX.Element {
     }
   }
 
-  function addPayment(): void {
+  function togglePaymentMethod(method: PaymentMethod): void {
     setPays((current) => {
-      const usedMethods = new Set(current.map((p) => p.method))
-      const nextMethod =
-        PAYMENT_METHODS.find((method) => !usedMethods.has(method.value))?.value ?? 'cash_ves'
-      const next = [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          method: nextMethod,
-          amountCents: 0
-        }
-      ]
-      next[next.length - 1]!.amountCents = amountToCompleteWithBenefits(next, next.length - 1)
-      return next
-    })
-  }
-
-  function startMixedPayment(): void {
-    const firstPart = Math.floor(total / 2)
-    const entries: PayEntry[] = [
-      { id: crypto.randomUUID(), method: 'cash_ves', amountCents: firstPart },
-      { id: crypto.randomUUID(), method: 'cash_usd', amountCents: 0 }
-    ]
-    const usdAmount = amountToCompleteWithBenefits(entries, 1)
-    entries[1]!.amountCents = usdAmount
-    setPays(entries)
-  }
-
-  function changePaymentMethod(id: string, method: PaymentMethod): void {
-    setPays((current) => {
-      const next = current.map((payment) => (payment.id === id ? { ...payment, method } : payment))
-      if (next.length === 1) {
-        next[0]!.amountCents = amountToCompleteWithBenefits(next, 0)
+      if (current.some((payment) => payment.method === method)) {
+        return current.filter((payment) => payment.method !== method)
       }
+      const next = [...current, { id: crypto.randomUUID(), method, amountCents: 0 }]
+      const targetIndex = next.length - 1
+      next[targetIndex]!.amountCents = amountToCompleteWithBenefits(next, targetIndex)
       return next
     })
   }
@@ -340,8 +363,8 @@ function POSContent(): React.JSX.Element {
         notes: null
       })
       toast.success(
-        `Venta ${res.sale.number} — total ${formatMoney(res.sale.total)}` +
-          (res.changeUsd > 0 ? ` · vuelto ${formatMoney(res.changeUsd)}` : '')
+        `Venta ${res.sale.number} — total Ref. ${formatReference(res.sale.total)}` +
+          (res.changeUsd > 0 ? ` · vuelto Ref. ${formatReference(res.changeUsd)}` : '')
       )
       // Print ticket (non-blocking: sale is already saved).
       void printTicket(authSessionId, res.sale.id).catch((err) => {
@@ -377,9 +400,17 @@ function POSContent(): React.JSX.Element {
   }
 
   return (
-    <div className="grid h-full grid-cols-[1fr_380px] gap-4">
-      {/* Left: cart */}
-      <div className="flex flex-col gap-3">
+    <div className="flex min-h-full flex-col gap-5 pb-4">
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Nueva venta</h2>
+        <p className="text-sm text-muted-foreground">
+          Registra el cliente, escanea los productos y distribuye el cobro entre uno o varios
+          métodos de pago.
+        </p>
+      </div>
+
+      {/* Ficha de la venta, equivalente al encabezado de Tiendas Gala. */}
+      <div className="space-y-4 rounded-xl border bg-muted/30 p-4">
         <CustomerCedulaSlot
           customer={cart.customer}
           walkIn={cart.walkIn}
@@ -403,8 +434,8 @@ function POSContent(): React.JSX.Element {
                 Crédito por devolución disponible
               </div>
               <div className="text-xs text-emerald-700">
-                Se aplicará hasta {formatMoney(cart.customer.returnCreditBalance)} después de la
-                fidelización.
+                Se aplicará hasta Ref. {formatReference(cart.customer.returnCreditBalance)} después
+                de la fidelización.
               </div>
             </div>
             <Button
@@ -421,14 +452,17 @@ function POSContent(): React.JSX.Element {
           </div>
         )}
 
-        {(sellers ?? []).length > 0 && (
-          <div className="flex items-center gap-2">
-            <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">
+              Vendedor
+            </Label>
             <Select
               value={sellerId || NO_SELLER}
               onValueChange={(v) => setSellerId(v === NO_SELLER ? '' : v)}
             >
-              <SelectTrigger className="h-9">
+              <SelectTrigger className="h-9 bg-background">
+                <UserRound className="mr-2 h-4 w-4 text-muted-foreground" />
                 <SelectValue placeholder="Vendedor (opcional)" />
               </SelectTrigger>
               <SelectContent>
@@ -442,14 +476,60 @@ function POSContent(): React.JSX.Element {
               </SelectContent>
             </Select>
           </div>
-        )}
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">
+              Moneda de cobro
+            </Label>
+            <Select
+              value={currencyMode}
+              onValueChange={(value) => {
+                setCurrencyMode(value as CurrencyMode)
+                setPays([])
+              }}
+            >
+              <SelectTrigger className="h-9 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="USD">Referencia</SelectItem>
+                <SelectItem value="VES">Bolívares</SelectItem>
+                <SelectItem value="MIXED">Mixto</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase text-muted-foreground">Fecha</Label>
+            <div className="flex h-9 items-center gap-2 rounded-md border bg-muted px-3 text-sm">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              {new Date().toLocaleDateString('es-VE')}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Detalle de productos */}
+      <div className="space-y-3">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h3 className="font-semibold">Detalle de productos</h3>
+            <p className="text-xs text-muted-foreground">
+              Escanea consecutivamente o busca manualmente por SKU, código o nombre.
+            </p>
+          </div>
+          <Badge variant="secondary">{cart.lines.length} líneas</Badge>
+        </div>
 
         <form
           onSubmit={handleCode}
-          className={'flex gap-2 ' + (!customerReady ? 'pointer-events-none opacity-50' : '')}
+          className={
+            'flex gap-2 rounded-lg border bg-background p-2 shadow-sm ' +
+            (!customerReady ? 'pointer-events-none opacity-50' : '')
+          }
         >
           <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <ScanLine className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchRef}
               value={code}
@@ -543,7 +623,7 @@ function POSContent(): React.JSX.Element {
                       </span>
                       <span className="shrink-0 text-right">
                         <span className="block font-mono font-semibold">
-                          {formatMoney(product.effectivePrice)}
+                          Ref. {formatReference(product.effectivePrice)}
                         </span>
                         <span className="block text-xs text-muted-foreground">
                           Stock: {product.stock}
@@ -565,23 +645,28 @@ function POSContent(): React.JSX.Element {
           </Button>
         </form>
 
-        <Card className="flex-1">
+        <Card>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead className="w-28">Cant.</TableHead>
-                  <TableHead className="text-right">Precio</TableHead>
-                  <TableHead className="text-right">Subtotal</TableHead>
-                  <TableHead></TableHead>
+                <TableRow className="bg-muted/70 text-[11px] uppercase tracking-wide">
+                  <TableHead className="min-w-64">Producto</TableHead>
+                  <TableHead className="w-24 text-center">Cant.</TableHead>
+                  <TableHead className="min-w-28 text-right">Precio Bs</TableHead>
+                  <TableHead className="min-w-24 text-right">Precio Ref.</TableHead>
+                  <TableHead className="w-20 text-right">% Desc.</TableHead>
+                  <TableHead className="min-w-24 text-right">Ref. c/desc.</TableHead>
+                  <TableHead className="min-w-28 text-right">Bs c/desc.</TableHead>
+                  <TableHead className="min-w-28 text-right">Subt. Bs</TableHead>
+                  <TableHead className="min-w-24 text-right">Subt. Ref.</TableHead>
+                  <TableHead className="w-14 text-center">Acc.</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cart.lines.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={10}
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
                       <ShoppingCart className="mx-auto mb-2 h-8 w-8 opacity-40" />
@@ -598,10 +683,20 @@ function POSContent(): React.JSX.Element {
         </Card>
       </div>
 
-      {/* Right: checkout */}
-      <div className="flex flex-col gap-3">
-        <Card>
+      {/* Métodos de pago y total, con la jerarquía visual de Tiendas Gala. */}
+      <div className="grid items-start gap-5 rounded-xl border bg-muted/30 p-5 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+        <Card className="order-2 lg:sticky lg:top-0">
           <CardContent className="space-y-3 p-4">
+            <div className="text-right">
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Total a pagar
+              </div>
+              {rate && (
+                <Badge variant="outline" className="mt-1 border-blue-200 bg-blue-50 text-blue-700">
+                  Tasa BCV: {rate.toFixed(2)} Bs/Ref.
+                </Badge>
+              )}
+            </div>
             <div className="space-y-1 text-sm">
               <TotalRow label="Subtotal productos" cents={grossSubtotal} rate={rate} />
               {productDiscount > 0 && (
@@ -609,14 +704,14 @@ function POSContent(): React.JSX.Element {
               )}
               {usdDiscount > 0 && (
                 <TotalRow
-                  label={`Descuento pago USD (${(discountUsdRateBp / 100).toFixed(2)}%)`}
+                  label={`Descuento pago en referencia (${(discountUsdRateBp / 100).toFixed(2)}%)`}
                   cents={-usdDiscount}
                   rate={rate}
                 />
               )}
               {benefits.fidelityAppliedCents > 0 && (
                 <TotalRow
-                  label={`Fidelización (${formatMoney(FIDELITY_REWARD_CENTS)})`}
+                  label={`Fidelización (Ref. ${formatReference(FIDELITY_REWARD_CENTS)})`}
                   cents={-benefits.fidelityAppliedCents}
                   rate={rate}
                 />
@@ -628,13 +723,15 @@ function POSContent(): React.JSX.Element {
                   rate={rate}
                 />
               )}
-              <div className="flex items-center justify-between border-t pt-2 text-lg font-bold">
-                <span>Total</span>
+              <div className="flex items-end justify-between border-t pt-3">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Cantidad Ref. / Bs
+                </span>
                 <div className="text-right">
-                  <div>{formatMoney(total)}</div>
+                  <div className="text-2xl font-bold">Ref. {formatReference(total)}</div>
                   {rate && (
-                    <div className="text-xs font-normal text-muted-foreground">
-                      {formatVes(total, rate)}
+                    <div className="text-sm font-medium text-muted-foreground">
+                      Bs {formatBolivares(total, rate)}
                     </div>
                   )}
                 </div>
@@ -643,52 +740,63 @@ function POSContent(): React.JSX.Element {
           </CardContent>
         </Card>
 
-        <Card className="flex-1">
-          <CardContent className="space-y-2 p-4">
+        <Card className="order-1">
+          <CardContent className="space-y-4 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Pagos</span>
+                <span className="text-sm font-semibold uppercase tracking-wide">
+                  Métodos de pago
+                </span>
                 {pays.length > 1 && <Badge variant="secondary">Mixto</Badge>}
               </div>
-              <div className="flex items-center gap-1">
-                {pays.length <= 1 && (
-                  <Button size="sm" variant="outline" onClick={startMixedPayment}>
-                    Pago mixto
-                  </Button>
-                )}
-                <Button size="sm" variant="outline" onClick={addPayment}>
-                  <Plus className="h-3 w-3" />
-                  Método
-                </Button>
-              </div>
+              <span className="text-xs text-muted-foreground">Selecciona uno o varios métodos</span>
             </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+              {paymentMethods.map((method) => {
+                const selected = pays.some((payment) => payment.method === method.value)
+                const disabled = method.value === 'credit' && !cart.customer
+                const Icon = PAYMENT_ICON[method.value]
+                return (
+                  <button
+                    key={method.value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => togglePaymentMethod(method.value)}
+                    className={`flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      selected
+                        ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary/30'
+                        : 'bg-background hover:bg-muted'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                        selected ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-xs font-medium leading-tight">{method.label}</span>
+                    <Badge variant="outline" className="text-[9px]">
+                      {method.currency === 'VES' ? 'Bs' : 'Ref.'}
+                    </Badge>
+                  </button>
+                )
+              })}
+            </div>
+
             {pays.length === 0 && (
               <p className="text-xs text-muted-foreground">Añade al menos un método de pago.</p>
             )}
             {pays.map((p) => (
               <div key={p.id} className="space-y-1 rounded-md border p-2">
                 <div className="flex items-center gap-1">
-                  <Select
-                    value={p.method}
-                    onValueChange={(v) => changePaymentMethod(p.id, v as PaymentMethod)}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAYMENT_METHODS.map((m) => (
-                        <SelectItem
-                          key={m.value}
-                          value={m.value}
-                          disabled={pays.some(
-                            (other) => other.id !== p.id && other.method === m.value
-                          )}
-                        >
-                          {m.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex flex-1 items-center gap-2 text-sm font-medium">
+                    {(() => {
+                      const Icon = PAYMENT_ICON[p.method]
+                      return <Icon className="h-4 w-4 text-primary" />
+                    })()}
+                    {PAYMENT_METHODS.find((method) => method.value === p.method)?.label ?? p.method}
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -699,6 +807,7 @@ function POSContent(): React.JSX.Element {
                 </div>
                 <MoneyInput
                   valueCents={p.amountCents}
+                  referenceLabel="Ref."
                   onChangeCents={(cents) =>
                     setPays((cur) =>
                       cur.map((x) => (x.id === p.id ? { ...x, amountCents: cents } : x))
@@ -710,7 +819,7 @@ function POSContent(): React.JSX.Element {
                     <span className="text-[10px] text-muted-foreground">
                       {PAYMENT_CURRENCY[p.method] === 'VES'
                         ? 'Pago en bolívares'
-                        : 'Pago en dólares'}
+                        : 'Pago en referencia'}
                     </span>
                     <Button
                       type="button"
@@ -729,17 +838,17 @@ function POSContent(): React.JSX.Element {
             <div className="space-y-1 border-t pt-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Pagado</span>
-                <span className="font-mono">{formatMoney(paid)}</span>
+                <span className="font-mono">Ref. {formatReference(paid)}</span>
               </div>
               {remaining > 0 ? (
                 <div className="flex justify-between text-rose-600">
                   <span>Falta</span>
-                  <span className="font-mono font-semibold">{formatMoney(remaining)}</span>
+                  <span className="font-mono font-semibold">Ref. {formatReference(remaining)}</span>
                 </div>
               ) : (
                 <div className="flex justify-between text-emerald-600">
                   <span>Vuelto</span>
-                  <span className="font-mono font-semibold">{formatMoney(change)}</span>
+                  <span className="font-mono font-semibold">Ref. {formatReference(change)}</span>
                 </div>
               )}
             </div>
@@ -751,7 +860,7 @@ function POSContent(): React.JSX.Element {
               disabled={submitting || cart.lines.length === 0 || remaining > 0}
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Cobrar {formatMoney(total)}
+              Cobrar Ref. {formatReference(total)}
             </Button>
           </CardContent>
         </Card>
@@ -762,9 +871,15 @@ function POSContent(): React.JSX.Element {
 
 function CartRow({ line }: { line: CartLine }): React.JSX.Element {
   const cart = useCart()
+  const rate = useFx((state) => state.rate?.rate ?? null)
+  const discountBp =
+    line.unitPrice > 0
+      ? Math.round(((line.unitPrice - line.effectivePrice) / line.unitPrice) * 10000)
+      : 0
+  const lineTotal = line.effectivePrice * line.qty
   return (
     <TableRow>
-      <TableCell>
+      <TableCell className="text-center">
         <div className="font-medium">{line.name}</div>
         <div className="text-xs text-muted-foreground">
           {line.sku}
@@ -780,28 +895,38 @@ function CartRow({ line }: { line: CartLine }): React.JSX.Element {
             min={1}
             value={line.qty}
             onChange={(e) => cart.setQty(line.key, parseInt(e.target.value || '1', 10))}
-            className="h-8 w-20"
+            className="mx-auto h-8 w-20 text-center"
           />
         )}
       </TableCell>
-      <TableCell className="text-right font-mono">
-        {line.effectivePrice < line.unitPrice && (
-          <div className="text-xs text-muted-foreground line-through">
-            {formatMoney(line.unitPrice)}
-          </div>
-        )}
-        <div>{formatMoney(line.effectivePrice)}</div>
-        {line.effectivePrice < line.unitPrice && (
-          <Badge variant="secondary" className="mt-1 text-[10px]">
-            -{Math.round(((line.unitPrice - line.effectivePrice) / line.unitPrice) * 100)}%
-          </Badge>
-        )}
+      <TableCell className="text-right font-mono text-xs">
+        {formatBolivares(line.unitPrice, rate)}
       </TableCell>
-      <TableCell className="text-right font-mono">
-        {formatMoney(line.effectivePrice * line.qty)}
+      <TableCell className="text-right font-mono text-xs">
+        {formatReference(line.unitPrice)}
       </TableCell>
-      <TableCell>
-        <Button variant="ghost" size="icon" onClick={() => cart.removeLine(line.key)}>
+      <TableCell className="text-right font-mono text-xs">
+        {discountBp > 0 ? `${(discountBp / 100).toFixed(2)}%` : '—'}
+      </TableCell>
+      <TableCell className="text-right font-mono text-xs font-medium">
+        {formatReference(line.effectivePrice)}
+      </TableCell>
+      <TableCell className="text-right font-mono text-xs font-medium">
+        {formatBolivares(line.effectivePrice, rate)}
+      </TableCell>
+      <TableCell className="text-right font-mono text-xs font-semibold">
+        {formatBolivares(lineTotal, rate)}
+      </TableCell>
+      <TableCell className="text-right font-mono text-xs font-semibold">
+        {formatReference(lineTotal)}
+      </TableCell>
+      <TableCell className="text-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:bg-destructive/10"
+          onClick={() => cart.removeLine(line.key)}
+        >
           <Trash2 className="h-4 w-4" />
         </Button>
       </TableCell>
@@ -822,9 +947,11 @@ function TotalRow({
     <div className="flex justify-between">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-mono">
-        {formatMoney(cents)}
+        Ref. {formatReference(cents)}
         {rate && (
-          <span className="ml-2 text-xs text-muted-foreground">{formatVes(cents, rate)}</span>
+          <span className="ml-2 text-xs text-muted-foreground">
+            Bs {formatBolivares(cents, rate)}
+          </span>
         )}
       </span>
     </div>
