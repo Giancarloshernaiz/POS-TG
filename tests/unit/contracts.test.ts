@@ -40,4 +40,54 @@ describe('contracts registry', () => {
     })
     expect(out.success).toBe(false)
   })
+
+  it('sales.saveDraft preserves the complete POS workspace', () => {
+    const out = contracts.sales.saveDraft.input.safeParse({
+      sessionId: 'session-1',
+      label: 'Cliente en caja 1',
+      state: {
+        customerId: 'customer-1',
+        customerLabel: 'Cliente en caja 1',
+        walkIn: false,
+        sellerId: 'seller-1',
+        currencyMode: 'MIXED',
+        useStoreCredit: true,
+        lines: [
+          {
+            key: 'product-1',
+            productId: 'product-1',
+            sku: 'SKU-1',
+            name: 'Producto',
+            qty: 2,
+            unitPrice: 1500,
+            effectivePrice: 1200,
+            taxRateBp: 0,
+            tracksSerial: false
+          }
+        ],
+        payments: [{ id: 'pay-1', method: 'card', amountCents: 1000 }]
+      }
+    })
+
+    expect(out.success).toBe(true)
+  })
+
+  it('sales.saveDraft rejects an empty cart', () => {
+    const out = contracts.sales.saveDraft.input.safeParse({
+      sessionId: 'session-1',
+      label: 'Vacía',
+      state: {
+        customerId: null,
+        customerLabel: 'Consumidor final',
+        walkIn: true,
+        sellerId: null,
+        currencyMode: 'USD',
+        useStoreCredit: false,
+        lines: [],
+        payments: []
+      }
+    })
+
+    expect(out.success).toBe(false)
+  })
 })

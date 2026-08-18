@@ -12,6 +12,7 @@ import {
   stockLevels,
   customers,
   sellers,
+  saleDrafts,
   syncState
 } from '@main/infrastructure/db/schema'
 import { requirePermission } from '@main/auth/guard'
@@ -25,7 +26,7 @@ import { pushSale } from '@main/infrastructure/sync/agroone/push.service'
 import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
 import { getIdentity } from '@main/infrastructure/device/identity.service'
 import { salesContract } from '@shared/ipc/contracts/sales'
-import type { SaleDTO } from '@shared/ipc/contracts/sales'
+import type { SaleDTO, SaleDraftDTO, SaleDraftStateDTO } from '@shared/ipc/contracts/sales'
 import { PAYMENT_DIVISA, PAYMENT_CURRENCY } from '@shared/payment'
 import {
   customerBenefitsCents,
@@ -60,6 +61,16 @@ type ComputedLine = {
   lineSubtotal: number
   lineTax: number
   lineTotal: number
+}
+
+function draftToDto(row: typeof saleDrafts.$inferSelect): SaleDraftDTO {
+  return {
+    id: row.id,
+    label: row.label,
+    state: JSON.parse(row.payload) as SaleDraftStateDTO,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  }
 }
 
 export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
@@ -168,6 +179,81 @@ export const salesHandlers = {
   > {
     const db = getDb()
     return db.select().from(sellers).where(eq(sellers.active, true)).orderBy(sellers.nombre).all()
+  },
+
+  async listDrafts(input: Input<'listDrafts'>): Promise<SaleDraftDTO[]> {
+    requirePermission(input.sessionId, PERMISSIONS.SALES_CREATE)
+    const rows = await getDb().select().from(saleDrafts).orderBy(desc(saleDrafts.updatedAt)).all()
+    const result: SaleDraftDTO[] = []
+    for (const row of rows) {
+      try {
+        result.push(draftToDto(row))
+      } catch {
+        // Un borrador antiguo/corrupto no debe bloquear la caja completa.
+      }
+    }
+    return result
+  },
+
+  async saveDraft(input: Input<'saveDraft'>): Promise<SaleDraftDTO> {
+    const session = requirePermission(input.sessionId, PERMISSIONS.SALES_CREATE)
+    const db = getDb()
+    const now = Date.now()
+    const id = input.id ?? ulid()
+    const existing = input.id
+      ? await db.select().from(saleDrafts).where(eq(saleDrafts.id, input.id)).get()
+      : undefined
+
+    if (existing) {
+      await db
+        .update(saleDrafts)
+        .set({
+          label: input.label,
+          payload: JSON.stringify(input.state),
+          userId: session.userId,
+          updatedAt: now
+        })
+        .where(eq(saleDrafts.id, id))
+        .run()
+    } else {
+      await db
+        .insert(saleDrafts)
+        .values({
+          id,
+          label: input.label,
+          payload: JSON.stringify(input.state),
+          userId: session.userId,
+          createdAt: now,
+          updatedAt: now
+        })
+        .run()
+    }
+
+    const saved = await db.select().from(saleDrafts).where(eq(saleDrafts.id, id)).get()
+    if (!saved) throw new SaleError('NOT_FOUND', 'no se pudo guardar la venta en espera')
+    await audit({
+      userId: session.userId,
+      action: existing ? 'sale.draft.update' : 'sale.draft.create',
+      targetType: 'sale_draft',
+      targetId: id,
+      after: { label: input.label, lines: input.state.lines.length }
+    })
+    return draftToDto(saved)
+  },
+
+  async deleteDraft(input: Input<'deleteDraft'>): Promise<{ deleted: boolean }> {
+    const session = requirePermission(input.sessionId, PERMISSIONS.SALES_CREATE)
+    const result = await getDb().delete(saleDrafts).where(eq(saleDrafts.id, input.id)).run()
+    const deleted = result.changes > 0
+    if (deleted) {
+      await audit({
+        userId: session.userId,
+        action: 'sale.draft.delete',
+        targetType: 'sale_draft',
+        targetId: input.id
+      })
+    }
+    return { deleted }
   },
 
   async create(input: Input<'create'>): Promise<{ sale: SaleDTO; changeUsd: number }> {
@@ -481,6 +567,12 @@ export const salesHandlers = {
              WHERE id = ?`
           )
           .run(nextFavor, nextReturnCredit, nextFidelity, nextAccumulated, now, input.customerId)
+      }
+
+      // Solo elimina la espera cuando la venta completa queda confirmada. Si
+      // falla inventario, pago o cualquier escritura, el rollback conserva el borrador.
+      if (input.draftId) {
+        raw.prepare(`DELETE FROM sale_drafts WHERE id = ?`).run(input.draftId)
       }
 
       raw.exec('COMMIT')

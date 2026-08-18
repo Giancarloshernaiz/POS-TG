@@ -24,6 +24,45 @@ const paymentInput = z.object({
   reference: z.string().nullable().optional()
 })
 
+const draftLine = z.object({
+  key: z.string(),
+  productId: z.string(),
+  sku: z.string(),
+  name: z.string(),
+  qty: z.number().int().positive(),
+  unitPrice: z.number().int().nonnegative(),
+  effectivePrice: z.number().int().nonnegative(),
+  taxRateBp: z.number().int().nonnegative(),
+  tracksSerial: z.boolean(),
+  serialId: z.string().optional(),
+  serialImei: z.string().optional()
+})
+
+const draftPayment = z.object({
+  id: z.string(),
+  method,
+  amountCents: z.number().int().nonnegative()
+})
+
+const draftState = z.object({
+  customerId: z.string().nullable(),
+  customerLabel: z.string(),
+  walkIn: z.boolean(),
+  sellerId: z.string().nullable(),
+  currencyMode: z.enum(['USD', 'VES', 'MIXED']),
+  useStoreCredit: z.boolean(),
+  lines: z.array(draftLine).min(1),
+  payments: z.array(draftPayment)
+})
+
+const saleDraft = z.object({
+  id: z.string(),
+  label: z.string(),
+  state: draftState,
+  createdAt: z.number(),
+  updatedAt: z.number()
+})
+
 const saleLine = z.object({
   id: z.string(),
   productId: z.string(),
@@ -117,6 +156,7 @@ export const salesContract = {
       sellerId: z.string().nullable().optional(),
       lines: z.array(saleLineInput).min(1),
       payments: z.array(paymentInput),
+      draftId: z.string().nullable().optional(),
       useStoreCredit: z.boolean().default(false),
       notes: z.string().nullable().optional()
     }),
@@ -133,6 +173,32 @@ export const salesContract = {
       'CREDIT_NO_CUSTOMER',
       'CREDIT_LIMIT_EXCEEDED'
     ] as const
+  },
+  listDrafts: {
+    kind: 'request',
+    channel: 'sales.listDrafts',
+    input: z.object({ sessionId: z.string() }),
+    output: z.array(saleDraft),
+    errors: ['NOT_AUTHENTICATED', 'FORBIDDEN'] as const
+  },
+  saveDraft: {
+    kind: 'request',
+    channel: 'sales.saveDraft',
+    input: z.object({
+      sessionId: z.string(),
+      id: z.string().optional(),
+      label: z.string().min(1).max(200),
+      state: draftState
+    }),
+    output: saleDraft,
+    errors: ['NOT_AUTHENTICATED', 'FORBIDDEN'] as const
+  },
+  deleteDraft: {
+    kind: 'request',
+    channel: 'sales.deleteDraft',
+    input: z.object({ sessionId: z.string(), id: z.string() }),
+    output: z.object({ deleted: z.boolean() }),
+    errors: ['NOT_AUTHENTICATED', 'FORBIDDEN'] as const
   },
   get: {
     kind: 'request',
@@ -172,3 +238,5 @@ export type SellerDTO = z.infer<typeof seller>
 export type SaleDTO = z.infer<typeof sale>
 export type SaleLineDTO = z.infer<typeof saleLine>
 export type SalePaymentDTO = z.infer<typeof payment>
+export type SaleDraftStateDTO = z.infer<typeof draftState>
+export type SaleDraftDTO = z.infer<typeof saleDraft>

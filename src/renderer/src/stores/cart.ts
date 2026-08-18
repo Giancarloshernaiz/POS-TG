@@ -24,6 +24,7 @@ type CartState = {
   removeLine: (key: string) => void
   setCustomer: (c: CustomerDTO | null) => void
   setWalkIn: (v: boolean) => void
+  restore: (input: { lines: CartLine[]; customer: CustomerDTO | null; walkIn: boolean }) => void
   clear: () => void
 }
 
@@ -55,5 +56,7 @@ export const useCart = create<CartState>((set) => ({
   removeLine: (key) => set((state) => ({ lines: state.lines.filter((l) => l.key !== key) })),
   setCustomer: (customer) => set({ customer, walkIn: false }),
   setWalkIn: (walkIn) => set({ walkIn, customer: null }),
+  restore: ({ lines, customer, walkIn }) =>
+    set({ lines: lines.map((line) => ({ ...line })), customer, walkIn }),
   clear: () => set({ lines: [], customer: null, walkIn: false })
 }))

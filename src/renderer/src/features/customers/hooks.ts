@@ -91,6 +91,15 @@ export async function searchCustomers(search: string): Promise<CustomerDTO[]> {
   return res.data
 }
 
+export async function getCustomer(id: string): Promise<CustomerDTO | null> {
+  const res = await api.customers.get({ id })
+  if (!res.ok) {
+    if (res.error.code === 'NOT_FOUND') return null
+    throw new Error(res.error.message)
+  }
+  return res.data
+}
+
 export function useRegisterArPayment(): ReturnType<
   typeof useMutation<
     CustomerDTO,

@@ -95,3 +95,21 @@ export const payments = sqliteTable(
   },
   (t) => [index('payments_sale_idx').on(t.saleId), index('payments_method_idx').on(t.method)]
 )
+
+export const saleDrafts = sqliteTable(
+  'sale_drafts',
+  {
+    id: text('id').primaryKey(),
+    label: text('label').notNull(),
+    payload: text('payload').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull()
+  },
+  (t) => [
+    index('sale_drafts_updated_idx').on(t.updatedAt),
+    index('sale_drafts_user_idx').on(t.userId)
+  ]
+)

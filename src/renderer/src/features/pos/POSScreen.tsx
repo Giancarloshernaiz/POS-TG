@@ -13,7 +13,9 @@ import {
   Smartphone,
   Landmark,
   WalletCards,
-  CircleDollarSign
+  CircleDollarSign,
+  Clock3,
+  PauseCircle
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@renderer/components/ui/input'
@@ -47,14 +49,20 @@ import {
   useCreateSale,
   printTicket,
   useSellers,
-  useDiscountUsd
+  useDiscountUsd,
+  useSaleDrafts,
+  useSaveSaleDraft,
+  useDeleteSaleDraft
 } from './hooks'
+import { SaleDraftsDialog } from './SaleDraftsDialog'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
+import { getCustomer } from '@renderer/features/customers/hooks'
 import { fromCents } from '@renderer/lib/money'
 import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethods'
 import { PAYMENT_CURRENCY } from '@shared/payment'
 import { MoneyInput } from '@renderer/components/MoneyInput'
 import type { ProductDTO } from '@shared/ipc/contracts/catalog'
+import type { SaleDraftDTO } from '@shared/ipc/contracts/sales'
 import {
   customerBenefitsCents,
   FIDELITY_REWARD_CENTS,
@@ -122,6 +130,9 @@ function POSContent(): React.JSX.Element {
   // y el selector solo aparece si el máster mandó alguno para esta tienda.
   const { data: sellers } = useSellers()
   const { data: discountUsd } = useDiscountUsd()
+  const { data: saleDrafts = [], isLoading: draftsLoading } = useSaleDrafts()
+  const saveSaleDraft = useSaveSaleDraft()
+  const deleteSaleDraft = useDeleteSaleDraft()
   const [sellerId, setSellerId] = useState<string>('')
   const [currencyMode, setCurrencyMode] = useState<CurrencyMode>('MIXED')
   const [useStoreCredit, setUseStoreCredit] = useState(false)
@@ -150,6 +161,9 @@ function POSContent(): React.JSX.Element {
   const [activeSuggestion, setActiveSuggestion] = useState(-1)
   const [pays, setPays] = useState<PayEntry[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [draftsOpen, setDraftsOpen] = useState(false)
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
 
   useEffect(() => {
     const term = code.trim()
@@ -317,6 +331,92 @@ function POSContent(): React.JSX.Element {
     })
   }
 
+  function resetWorkspace(): void {
+    cart.clear()
+    setPays([])
+    setSellerId('')
+    setCurrencyMode('MIXED')
+    setUseStoreCredit(false)
+    setActiveDraftId(null)
+    setCode('')
+    setProductSuggestions([])
+    setSuggestionsOpen(false)
+  }
+
+  async function holdSale(): Promise<void> {
+    if (cart.lines.length === 0) {
+      toast.error('Agrega al menos un producto antes de poner la venta en espera')
+      return
+    }
+    const label = cart.customer?.name ?? (cart.walkIn ? 'Consumidor final' : 'Cliente pendiente')
+    try {
+      await saveSaleDraft.mutateAsync({
+        ...(activeDraftId ? { id: activeDraftId } : {}),
+        label,
+        state: {
+          customerId: cart.customer?.id ?? null,
+          customerLabel: label,
+          walkIn: cart.walkIn,
+          sellerId: sellerId || null,
+          currencyMode,
+          useStoreCredit,
+          lines: cart.lines,
+          payments: pays
+        }
+      })
+      toast.success(activeDraftId ? 'Venta en espera actualizada' : 'Venta puesta en espera')
+      resetWorkspace()
+      setTimeout(() => searchRef.current?.focus(), 0)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar la venta')
+    }
+  }
+
+  async function resumeDraft(draft: SaleDraftDTO): Promise<void> {
+    const hasCurrentData =
+      cart.lines.length > 0 || cart.customer !== null || cart.walkIn || pays.length > 0
+    if (hasCurrentData) {
+      toast.warning('Pon la venta actual en espera antes de abrir otra')
+      return
+    }
+
+    try {
+      const customer = draft.state.customerId ? await getCustomer(draft.state.customerId) : null
+      if (draft.state.customerId && !customer) {
+        toast.warning('El cliente guardado ya no está disponible; selecciónalo nuevamente')
+      }
+      cart.restore({
+        lines: draft.state.lines as CartLine[],
+        customer,
+        walkIn: customer ? false : draft.state.walkIn
+      })
+      setSellerId(draft.state.sellerId ?? '')
+      setCurrencyMode(draft.state.currencyMode)
+      setUseStoreCredit(customer ? draft.state.useStoreCredit : false)
+      setPays(draft.state.payments as PayEntry[])
+      setActiveDraftId(draft.id)
+      setDraftsOpen(false)
+      toast.success(`Venta de ${draft.label} retomada`)
+      setTimeout(() => searchRef.current?.focus(), 0)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo retomar la venta')
+    }
+  }
+
+  async function removeDraft(draft: SaleDraftDTO): Promise<void> {
+    if (!window.confirm(`¿Eliminar la venta en espera de ${draft.label}?`)) return
+    setDeletingDraftId(draft.id)
+    try {
+      await deleteSaleDraft.mutateAsync(draft.id)
+      if (activeDraftId === draft.id) setActiveDraftId(null)
+      toast.success('Venta en espera eliminada')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo eliminar la venta')
+    } finally {
+      setDeletingDraftId(null)
+    }
+  }
+
   async function checkout(): Promise<void> {
     if (cart.lines.length === 0) {
       toast.error('Carrito vacío')
@@ -359,6 +459,7 @@ function POSContent(): React.JSX.Element {
             reference: null
           }
         }),
+        draftId: activeDraftId,
         useStoreCredit,
         notes: null
       })
@@ -378,9 +479,7 @@ function POSContent(): React.JSX.Element {
           toast.warning(`Venta guardada, pero no se pudo imprimir. ${msg}`)
         }
       })
-      cart.clear()
-      setPays([])
-      setUseStoreCredit(false)
+      resetWorkspace()
       searchRef.current?.focus()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -401,12 +500,41 @@ function POSContent(): React.JSX.Element {
 
   return (
     <div className="flex min-h-full flex-col gap-5 pb-4">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Nueva venta</h2>
-        <p className="text-sm text-muted-foreground">
-          Registra el cliente, escanea los productos y distribuye el cobro entre uno o varios
-          métodos de pago.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold tracking-tight">Nueva venta</h2>
+            {activeDraftId && <Badge variant="secondary">Venta retomada</Badge>}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Registra el cliente, escanea los productos y distribuye el cobro entre uno o varios
+            métodos de pago.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => setDraftsOpen(true)}>
+            <Clock3 className="mr-2 h-4 w-4" />
+            En espera
+            {saleDrafts.length > 0 && (
+              <Badge className="ml-2 px-1.5" variant="secondary">
+                {saleDrafts.length}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={cart.lines.length === 0 || saveSaleDraft.isPending}
+            onClick={() => void holdSale()}
+          >
+            {saveSaleDraft.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <PauseCircle className="mr-2 h-4 w-4" />
+            )}
+            {activeDraftId ? 'Actualizar espera' : 'Guardar en espera'}
+          </Button>
+        </div>
       </div>
 
       {/* Ficha de la venta, equivalente al encabezado de Tiendas Gala. */}
@@ -865,6 +993,15 @@ function POSContent(): React.JSX.Element {
           </CardContent>
         </Card>
       </div>
+      <SaleDraftsDialog
+        open={draftsOpen}
+        onOpenChange={setDraftsOpen}
+        drafts={saleDrafts}
+        isLoading={draftsLoading}
+        deletingId={deletingDraftId}
+        onResume={(draft) => void resumeDraft(draft)}
+        onDelete={(draft) => void removeDraft(draft)}
+      />
     </div>
   )
 }
