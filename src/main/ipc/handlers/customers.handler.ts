@@ -10,6 +10,7 @@ import { customersContract } from '@shared/ipc/contracts/customers'
 import type { CustomerDTO, ArMovementDTO } from '@shared/ipc/contracts/customers'
 import { emitLocalEvent } from '@main/infrastructure/sync/p2p/p2p.service'
 import type { CustomerUpsertPayload } from '@main/infrastructure/sync/p2p/reducers/catalog.reducer'
+import { pushCustomer } from '@main/infrastructure/sync/agroone/push.service'
 
 type Input<K extends keyof typeof customersContract> = z.infer<
   (typeof customersContract)[K]['input']
@@ -122,6 +123,7 @@ export const customersHandlers = {
         currentBalance: 0,
         specialDiscountBp: input.specialDiscountBp,
         active: input.active,
+        syncPending: true,
         createdAt: now,
         updatedAt: now
       })
@@ -133,6 +135,7 @@ export const customersHandlers = {
       targetId: id
     })
     await emitCustomerUpsertEvent(db, id)
+    void pushCustomer(id)
     return fetchById(id)
   },
 
@@ -141,7 +144,10 @@ export const customersHandlers = {
     const db = getDb()
     const current = await db.select().from(customers).where(eq(customers.id, input.id)).get()
     if (!current) throw new CustomerError('NOT_FOUND', 'cliente no existe')
-    const updates: Partial<typeof customers.$inferInsert> = { updatedAt: Date.now() }
+    const updates: Partial<typeof customers.$inferInsert> = {
+      updatedAt: Date.now(),
+      syncPending: true
+    }
     for (const k of [
       'name',
       'docType',
@@ -163,6 +169,9 @@ export const customersHandlers = {
       targetId: input.id
     })
     await emitCustomerUpsertEvent(db, input.id)
+    // La edición ya quedó persistida localmente. Se intenta subir de inmediato;
+    // si no hay red, syncPending hace que el scheduler la reintente sin perderla.
+    void pushCustomer(input.id)
     return fetchById(input.id)
   },
 

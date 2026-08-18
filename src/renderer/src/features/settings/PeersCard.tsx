@@ -41,7 +41,7 @@ export function PeersCard(): React.JSX.Element {
       <CardContent>
         {!provisioned ? (
           <div className="flex items-center gap-2 rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
-            <WifiOff className="h-4 w-4" /> Vincula esta caja con AgroOne primero para identificar
+            <WifiOff className="h-4 w-4" /> Vincula esta caja con Galas Cloud primero para identificar
             su tienda.
           </div>
         ) : isLoading || !status ? (

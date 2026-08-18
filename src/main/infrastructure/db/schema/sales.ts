@@ -11,7 +11,7 @@ export const sales = sqliteTable(
     id: text('id').primaryKey(),
     number: text('number').notNull(),
     customerId: text('customer_id').references(() => customers.id),
-    // Comisionista atribuido a la venta. Lo define AgroOne; null si no aplica.
+    // Comisionista atribuido a la venta. Lo define Galas Cloud; null si no aplica.
     sellerId: text('seller_id').references(() => sellers.id),
     userId: text('user_id')
       .notNull()

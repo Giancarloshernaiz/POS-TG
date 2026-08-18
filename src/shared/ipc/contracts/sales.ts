@@ -48,7 +48,7 @@ const sale = z.object({
   number: z.string(),
   customerId: z.string().nullable(),
   customerName: z.string().nullable(),
-  // La factura de AgroOne imprime RIF y dirección del cliente.
+  // La factura de Galas Cloud imprime RIF y dirección del cliente.
   customerDocType: z.string().nullable().default(null),
   customerDocId: z.string().nullable().default(null),
   customerAddress: z.string().nullable().default(null),
@@ -71,7 +71,7 @@ const sale = z.object({
   createdAt: z.number(),
   sellerId: z.string().nullable().default(null),
   sellerName: z.string().nullable().default(null),
-  // Estado de subida a AgroOne. La reimpresión y la devolución exigen que la
+  // Estado de subida a Galas Cloud. La reimpresión y la devolución exigen que la
   // venta ya exista allá, así que el historial lo muestra por adelantado en vez
   // de dejar que el cajero se entere al recibir el error.
   syncStatus: z.enum(['synced', 'pending', 'error']).default('pending'),

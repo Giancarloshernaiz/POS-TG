@@ -43,14 +43,14 @@ function finDelDia(iso: string): number {
 
 /**
  * Estado de subida al máster. Se muestra porque tanto la reimpresión como la
- * devolución exigen que la venta ya exista en AgroOne: sin esto el cajero solo
+ * devolución exigen que la venta ya exista en Galas Cloud: sin esto el cajero solo
  * se entera al apretar el botón y recibir el error.
  */
 function SyncBadge({ sale }: { sale: SaleDTO }): React.JSX.Element {
   if (sale.syncStatus === 'synced') {
     return (
       <Badge variant="outline" className="gap-1 text-green-700">
-        <CloudUpload className="h-3 w-3" /> En AgroOne
+        <CloudUpload className="h-3 w-3" /> En Galas Cloud
       </Badge>
     )
   }
@@ -87,7 +87,7 @@ export function ReportsScreen(): React.JSX.Element {
   const authSessionId = useAuth((s) => s.session?.id ?? '')
   const canVoid = useAuth((s) => s.hasPermission('sales.void'))
 
-  // Reimpresión y devolución las autoriza un administrador en AgroOne.
+  // Reimpresión y devolución las autoriza un administrador en Galas Cloud.
   const [espera, setEspera] = useState<{ id: number; titulo: string; saleId: string } | null>(null)
   const [devolucion, setDevolucion] = useState<{ id: string; number: string } | null>(null)
   const [reimpresion, setReimpresion] = useState<{ id: string; number: string } | null>(null)
@@ -259,13 +259,13 @@ export function ReportsScreen(): React.JSX.Element {
                       <Button
                         variant="ghost"
                         size="sm"
-                        // Ambas acciones necesitan la venta en AgroOne: el
+                        // Ambas acciones necesitan la venta en Galas Cloud: el
                         // administrador aprueba contra la factura del máster.
                         disabled={!sincronizada}
                         title={
                           sincronizada
                             ? 'Solicitar reimpresión'
-                            : 'Sincroniza la venta con AgroOne para poder reimprimirla'
+                            : 'Sincroniza la venta con Galas Cloud para poder reimprimirla'
                         }
                         onClick={() => setReimpresion({ id: s.id, number: s.number })}
                       >
@@ -283,7 +283,7 @@ export function ReportsScreen(): React.JSX.Element {
                                 ? 'Esta venta ya tiene una devolución pendiente'
                                 : sincronizada
                               ? 'Solicitar devolución'
-                              : 'Sincroniza la venta con AgroOne para poder devolver'
+                              : 'Sincroniza la venta con Galas Cloud para poder devolver'
                           }
                           onClick={() => setDevolucion({ id: s.id, number: s.number })}
                         >
@@ -340,7 +340,7 @@ export function ReportsScreen(): React.JSX.Element {
         titulo={espera?.titulo ?? ''}
         onApproved={() => {
           // Solo la reimpresión tiene efecto local; la devolución la ejecuta
-          // AgroOne y baja en el próximo pull.
+          // Galas Cloud y baja en el próximo pull.
           if (espera?.titulo.startsWith('Reimpresión') && espera.saleId) {
             void imprimirAprobada(espera.saleId)
           } else {

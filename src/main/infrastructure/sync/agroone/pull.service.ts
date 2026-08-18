@@ -23,7 +23,7 @@ import {
   type AgroCategory
 } from './agro.client'
 
-// Pull desde AgroOne → proyecciones locales (plan §31.5, §31.8). El máster es
+// Pull desde Galas Cloud → proyecciones locales (plan §31.5, §31.8). El máster es
 // autoritativo del catálogo y la asignación de stock; upsert idempotente por
 // agroId (clave natural de respaldo: sku / cédula / nombre).
 
@@ -149,7 +149,7 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
 
       // Existencia de ESTA tienda → stock_levels. La instalación local es
       // siempre single-store (Fase 1), así que la única location es 'main';
-      // storeId solo filtra CUÁL existencia de AgroOne (multi-tienda) aplica.
+      // storeId solo filtra CUÁL existencia de Galas Cloud (multi-tienda) aplica.
       const mine = p.existencias.find((e) => e.tiendaId === storeId)
       if (mine) {
         tx.insert(stockLevels)
@@ -188,10 +188,26 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
         fidelityAccumulated: c.acumuladoFidelidadCents,
         agroId: c.agroId,
         active: true,
+        syncPending: false,
         updatedAt: ts
       }
       if (local) {
-        tx.update(customers).set(common).where(eq(customers.id, local.id)).run()
+        if (local.syncPending) {
+          // Los saldos sí son autoritativos del maestro, pero los datos editables
+          // locales no pueden revertirse mientras su PATCH siga pendiente.
+          tx.update(customers)
+            .set({
+              agroId: c.agroId,
+              favorBalance: c.saldoFavorCents,
+              returnCreditBalance: c.creditoDevolucionCents,
+              fidelityBalance: c.saldoFidelidadCents,
+              fidelityAccumulated: c.acumuladoFidelidadCents
+            })
+            .where(eq(customers.id, local.id))
+            .run()
+        } else {
+          tx.update(customers).set(common).where(eq(customers.id, local.id)).run()
+        }
       } else {
         tx.insert(customers)
           .values({ id: ulid(), ...common, createdAt: ts })

@@ -8,7 +8,7 @@ import { normalizeBaseUrl } from '@main/infrastructure/sync/agroone/agro.client'
 import type { DeviceIdentityDTO } from '@shared/ipc/contracts/device'
 
 // Identidad de esta caja (plan §31.3): nodeId estable (ULID, primer boot),
-// vinculado a una Tienda de AgroOne (storeId) durante el provisioning.
+// vinculado a una Tienda de Galas Cloud (storeId) durante el provisioning.
 
 const DEFAULT_LABEL = 'Caja sin nombre'
 
@@ -50,7 +50,7 @@ export function isProvisioned(id: DeviceIdentityDTO): boolean {
   return id.storeId !== null && id.provisionedAt !== null
 }
 
-/** Vincula esta caja a una Tienda de AgroOne. Conserva el nodeId. */
+/** Vincula esta caja a una Tienda de Galas Cloud. Conserva el nodeId. */
 export async function provision(input: {
   agroBaseUrl: string
   storeId: number

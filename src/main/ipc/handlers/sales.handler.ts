@@ -154,7 +154,7 @@ export async function buildSaleDto(saleId: string): Promise<SaleDTO> {
 }
 
 export const salesHandlers = {
-  /** Vendedores activos de la tienda (los define AgroOne, bajan por pull). */
+  /** Vendedores activos de la tienda (los define Galas Cloud, bajan por pull). */
   async listSellers(): Promise<
     Array<{
       id: string
@@ -493,7 +493,7 @@ export const salesHandlers = {
       after: { number, total }
     })
 
-    // Sincroniza con AgroOne en segundo plano; la venta ya quedó persistida
+    // Sincroniza con Galas Cloud en segundo plano; la venta ya quedó persistida
     // localmente, así que un fallo aquí no afecta la respuesta al cajero.
     void pushSale(saleId)
 

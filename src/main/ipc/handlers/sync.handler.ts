@@ -1,7 +1,11 @@
 import { requirePermission } from '@main/auth/guard'
 import { getIdentity, isProvisioned } from '@main/infrastructure/device/identity.service'
 import { runPull, getLastPull } from '@main/infrastructure/sync/agroone/pull.service'
-import { pushPendingSales, getPushStatus } from '@main/infrastructure/sync/agroone/push.service'
+import {
+  pushPendingCustomers,
+  pushPendingSales,
+  getPushStatus
+} from '@main/infrastructure/sync/agroone/push.service'
 import { getUplinkLeaderInfo } from '@main/infrastructure/sync/agroone/leader.service'
 import {
   getCatalogHealth,
@@ -22,8 +26,11 @@ export const syncHandlers = {
     const session = requirePermission(input.sessionId, PERMISSIONS.SETTINGS_MANAGE)
     const identity = await getIdentity()
     if (!isProvisioned(identity) || identity.storeId === null || !identity.agroBaseUrl) {
-      throw Object.assign(new Error('caja no vinculada con AgroOne'), { code: 'NOT_PROVISIONED' })
+      throw Object.assign(new Error('caja no vinculada con Galas Cloud'), {
+        code: 'NOT_PROVISIONED'
+      })
     }
+    await pushPendingCustomers()
     const summary = await runPull(identity.agroBaseUrl, identity.storeId)
     await audit({
       userId: session.userId,
@@ -51,7 +58,9 @@ export const syncHandlers = {
 
   async retryPush(input: { sessionId: string }): Promise<{ retried: number }> {
     requirePermission(input.sessionId, PERMISSIONS.SETTINGS_MANAGE)
-    const retried = await pushPendingSales()
+    const customersRetried = await pushPendingCustomers()
+    const salesRetried = await pushPendingSales()
+    const retried = customersRetried + salesRetried
     return { retried }
   },
 
@@ -62,14 +71,16 @@ export const syncHandlers = {
 
   /**
    * Mapea contra el máster los productos locales que quedaron sin `agroId`
-   * (creados por la caja antes de que AgroOne fuera el único dueño del
+   * (creados por la caja antes de que Galas Cloud fuera el único dueño del
    * catálogo) y reintenta las ventas que estaban trabadas por ese motivo.
    */
   async reconcileCatalog(input: { sessionId: string }): Promise<ReconcileResult> {
     const session = requirePermission(input.sessionId, PERMISSIONS.SETTINGS_MANAGE)
     const identity = await getIdentity()
     if (!isProvisioned(identity) || !identity.agroBaseUrl) {
-      throw Object.assign(new Error('caja no vinculada con AgroOne'), { code: 'NOT_PROVISIONED' })
+      throw Object.assign(new Error('caja no vinculada con Galas Cloud'), {
+        code: 'NOT_PROVISIONED'
+      })
     }
     const result = await reconcileCatalog(identity.agroBaseUrl)
     await audit({

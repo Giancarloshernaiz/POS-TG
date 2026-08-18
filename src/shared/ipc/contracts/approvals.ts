@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 // Devolución y reimpresión de factura: la caja solicita, el administrador
-// aprueba en AgroOne. La caja consulta el estado para saber si ya se resolvió.
+// aprueba en Galas Cloud. La caja consulta el estado para saber si ya se resolvió.
 
 const authorization = z.object({
   id: z.number(),

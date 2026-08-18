@@ -1,17 +1,17 @@
 import { z } from 'zod'
 
-// Identidad de esta caja (nodo POS) y su vinculación con una Tienda de AgroOne.
+// Identidad de esta caja (nodo POS) y su vinculación con una Tienda de Galas Cloud.
 const deviceIdentity = z.object({
   nodeId: z.string(), // ULID, generado una vez en el primer arranque
   nodeLabel: z.string(), // etiqueta humana, ej. "Caja 1"
-  storeId: z.number().nullable(), // AgroOne Tienda.id
+  storeId: z.number().nullable(), // Galas Cloud Tienda.id
   storeName: z.string().nullable(),
-  sedeId: z.number().nullable(), // AgroOne Sede.id (forward-compat)
+  sedeId: z.number().nullable(), // Galas Cloud Sede.id (forward-compat)
   agroBaseUrl: z.string().nullable(), // base del máster, ej. http://192.168.1.10:3001
   provisionedAt: z.number().nullable() // epoch ms cuando se vinculó
 })
 
-// Una tienda ofrecida por AgroOne para elegir en el wizard.
+// Una tienda ofrecida por Galas Cloud para elegir en el wizard.
 const storeOption = z.object({
   id: z.number(),
   nombre: z.string(),

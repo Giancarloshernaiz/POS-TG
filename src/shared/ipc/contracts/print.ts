@@ -40,7 +40,7 @@ export const printContract = {
     input: z.object({
       sessionId: z.string(),
       saleId: z.string(),
-      /** Reimpresión: la factura sale marcada como COPIA, igual que en AgroOne. */
+      /** Reimpresión: la factura sale marcada como COPIA, igual que en Galas Cloud. */
       esCopia: z.boolean().default(false)
     }),
     output: z.object({ ok: z.literal(true) }),

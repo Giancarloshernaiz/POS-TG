@@ -22,16 +22,9 @@ Estado actual: POS funcional offline end-to-end — auth, catálogo/inventario/c
 - **IGTF opcional:** toggle on/off + tasa editable en Configuración ([IgtfCard](../src/renderer/src/features/settings/IgtfCard.tsx)). Solo se cobra en pagos en dólares (efectivo $ y Zelle). El motor de venta lee la config; si está apagado, IGTF = 0.
 - **Abrir caja desde POS:** si no hay caja abierta, el Punto de venta muestra el formulario de apertura inline (sin cambiar de pantalla). [OpenCashForm](../src/renderer/src/features/cash/OpenCashForm.tsx) reutilizado.
 
-### ⚠️ Bypass temporal — buscador manual de productos (ELIMINAR antes de producción)
+### Búsqueda manual de productos
 
-Para testear ventas sin lector de código de barras, el POS tiene un botón **"Buscar"** (ícono matraz 🧪) que abre un selector manual de productos ([ProductPickerDialog](../src/renderer/src/features/pos/ProductPickerDialog.tsx) + `searchProducts` en [pos/hooks.ts](../src/renderer/src/features/pos/hooks.ts)).
-
-**Esto es un bypass de prueba.** El flujo real del POS es por escaneo de código de barras. Antes de producción:
-
-- Eliminar `ProductPickerDialog`, el botón "Buscar" y `searchProducts`, **o**
-- Gatearlo detrás de un flag de "modo entrenamiento" (Fase 3).
-
-Todos los puntos del bypass están marcados con comentarios `TEMP BYPASS` en el código.
+El campo principal del POS funciona como escáner y buscador. La pistola puede enviar el código con Enter; si no está disponible, el cajero puede escribir el SKU o el nombre y seleccionar directamente uno de los productos sugeridos. Esta selección usa el catálogo local sincronizado y no requiere autorización de un gerente.
 
 ---
 

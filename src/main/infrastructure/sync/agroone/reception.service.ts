@@ -15,7 +15,7 @@ import {
 // Recepción en la tienda de los despachos del Centro de Acopio.
 //
 // Reparto de responsabilidades: el despacho, sus líneas y `ExistenciaTienda`
-// viven en AgroOne. La caja es una interfaz de captura — escanea, el máster
+// viven en Galas Cloud. La caja es una interfaz de captura — escanea, el máster
 // valida y acumula, y acá solo se refleja el resultado en la proyección local
 // (`stock_levels`) para que el inventario de pantalla no quede desfasado hasta
 // el próximo pull.
@@ -55,7 +55,7 @@ async function requireStoreContext(): Promise<{ baseUrl: string; storeId: number
   if (!isProvisioned(identity) || identity.storeId === null || !identity.agroBaseUrl) {
     throw new ReceptionError(
       'NOT_PROVISIONED',
-      'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes para poder recibir despachos.'
+      'Esta caja no está vinculada a Galas Cloud. Configúrala en Ajustes para poder recibir despachos.'
     )
   }
   return { baseUrl: identity.agroBaseUrl, storeId: identity.storeId }

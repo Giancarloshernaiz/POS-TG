@@ -223,7 +223,7 @@ export function ProductsScreen(): React.JSX.Element {
           <DialogHeader>
             <DialogTitle>Dar de baja «{porBorrar?.name}»</DialogTitle>
             <DialogDescription>
-              La baja se hace en AgroOne, que administra el catálogo. Si el producto nunca se vendió
+              La baja se hace en Galas Cloud, que administra el catálogo. Si el producto nunca se vendió
               ni se despachó, se elimina definitivamente; si tiene historial, se desactiva para no
               perder los movimientos pasados. En ambos casos deja de aparecer en la caja.
             </DialogDescription>

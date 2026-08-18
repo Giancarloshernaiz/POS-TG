@@ -6,12 +6,12 @@ import type { SaleDTO } from '@shared/ipc/contracts/sales'
 
 /** Mensajes de los errores que devuelve el flujo de aprobación. */
 export const APPROVAL_ERRORS: Record<string, string> = {
-  NOT_PROVISIONED: 'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes.',
+  NOT_PROVISIONED: 'Esta caja no está vinculada a Galas Cloud. Configúrala en Ajustes.',
   NO_APPROVERS: 'Elegí a quién le pedís la autorización',
   SALE_NOT_SYNCED:
-    'Esta venta todavía no llegó a AgroOne. Sincroniza desde Ajustes y volvé a intentar.',
+    'Esta venta todavía no llegó a Galas Cloud. Sincroniza desde Ajustes y volvé a intentar.',
   SALE_NOT_FOUND: 'La venta no existe',
-  AGRO_UNREACHABLE: 'AgroOne no responde. Revisa la conexión.',
+  AGRO_UNREACHABLE: 'Galas Cloud no responde. Revisa la conexión.',
   FORBIDDEN: 'Sin permiso',
   RETURN_ALREADY_REQUESTED: 'Esta venta ya tiene una devolución pendiente de aprobación.',
   RETURN_ALREADY_COMPLETED: 'Esta venta ya fue devuelta.'
@@ -72,7 +72,7 @@ export function useRequestReturn(): ReturnType<
 
 /**
  * Sondea el estado de una solicitud mientras siga PENDING. El administrador
- * aprueba desde AgroOne, así que la caja no tiene forma de enterarse sola.
+ * aprueba desde Galas Cloud, así que la caja no tiene forma de enterarse sola.
  */
 export function useApprovalStatus(
   requestId: number | null

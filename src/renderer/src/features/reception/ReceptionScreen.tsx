@@ -79,8 +79,8 @@ function DispatchList({ onSelect }: { onSelect: (id: number) => void }): React.J
         <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
           <CloudOff className="h-4 w-4" />
           {code === 'NOT_PROVISIONED'
-            ? 'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes.'
-            : 'No se pudo consultar los despachos. Revisa la conexión con AgroOne.'}
+            ? 'Esta caja no está vinculada a Galas Cloud. Configúrala en Ajustes.'
+            : 'No se pudo consultar los despachos. Revisa la conexión con Galas Cloud.'}
         </CardContent>
       </Card>
     )

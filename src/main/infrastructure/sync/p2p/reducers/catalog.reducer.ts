@@ -5,18 +5,18 @@ import { compareHlc, parseHlc } from '../hlc'
 import { logger } from '@main/logger'
 
 // Reducer LWW por campo (§8.4) para catálogo de autoría POS. Solo relevante
-// mientras la fila no tenga agroId: una vez sincronizada con AgroOne, el pull
+// mientras la fila no tenga agroId: una vez sincronizada con Galas Cloud, el pull
 // periódico (Capa B) es quien converge sus campos entre cajas, no P2P.
 
 type DiscountType = 'none' | 'percent' | 'amount'
 
-/** true si debe ignorarse el evento remoto (local es igual o más nuevo, o ya gestiona AgroOne). */
+/** true si debe ignorarse el evento remoto (local es igual o más nuevo, o ya gestiona Galas Cloud). */
 function shouldSkip(
   localAgroId: number | null,
   localLwwHlc: string | null,
   remoteHlc: string
 ): boolean {
-  if (localAgroId !== null) return true // AgroOne converge esta fila, no P2P
+  if (localAgroId !== null) return true // Galas Cloud converge esta fila, no P2P
   if (!localLwwHlc) return false
   return compareHlc(parseHlc(remoteHlc), parseHlc(localLwwHlc)) <= 0
 }
@@ -84,6 +84,7 @@ export function applyProductUpsert(
     discountValue: payload.discountValue,
     active: payload.active,
     agroId: payload.agroId,
+    syncPending: true,
     lwwHlc: hlc,
     updatedAt: ts
   }

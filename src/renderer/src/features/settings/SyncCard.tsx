@@ -36,7 +36,7 @@ function formatWhen(ms: number): string {
   })
 }
 
-// Sincronización con el máster AgroOne — pull de catálogo, existencias,
+// Sincronización con el máster Galas Cloud — pull de catálogo, existencias,
 // clientes y tasa BCV (plan §31.5, Capa B).
 export function SyncCard(): React.JSX.Element {
   const { data: identity } = useDeviceIdentity()
@@ -60,8 +60,8 @@ export function SyncCard(): React.JSX.Element {
     } catch (e) {
       const code = e instanceof Error ? e.message : String(e)
       const human: Record<string, string> = {
-        NOT_PROVISIONED: 'Vincula la caja con AgroOne primero',
-        AGRO_UNREACHABLE: 'AgroOne no responde. Revisa la conexión.',
+        NOT_PROVISIONED: 'Vincula la caja con Galas Cloud primero',
+        AGRO_UNREACHABLE: 'Galas Cloud no responde. Revisa la conexión.',
         FORBIDDEN: 'Sin permiso'
       }
       toast.error(human[code] ?? `No se pudo sincronizar: ${code}`)
@@ -72,7 +72,7 @@ export function SyncCard(): React.JSX.Element {
     try {
       const r = await reconcile.mutateAsync()
       if (r.mapeados.length === 0 && r.fusionados.length === 0 && r.sinCorrespondencia.length === 0) {
-        toast.success('Todo el catálogo local ya está mapeado con AgroOne')
+        toast.success('Todo el catálogo local ya está mapeado con Galas Cloud')
         return
       }
       const partes = [`${r.mapeados.length} producto(s) vinculado(s)`]
@@ -89,8 +89,8 @@ export function SyncCard(): React.JSX.Element {
     } catch (e) {
       const code = e instanceof Error ? e.message : String(e)
       const human: Record<string, string> = {
-        NOT_PROVISIONED: 'Vincula la caja con AgroOne primero',
-        AGRO_UNREACHABLE: 'AgroOne no responde. Revisa la conexión.',
+        NOT_PROVISIONED: 'Vincula la caja con Galas Cloud primero',
+        AGRO_UNREACHABLE: 'Galas Cloud no responde. Revisa la conexión.',
         FORBIDDEN: 'Sin permiso'
       }
       toast.error(human[code] ?? `No se pudo reconciliar: ${code}`)
@@ -114,7 +114,7 @@ export function SyncCard(): React.JSX.Element {
         <div className="flex items-center justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4" /> Sincronización con AgroOne
+              <RefreshCw className="h-4 w-4" /> Sincronización con Galas Cloud
             </CardTitle>
             <CardDescription>
               Baja catálogo, existencias de tu tienda, clientes y tasa BCV desde el máster.
@@ -141,7 +141,7 @@ export function SyncCard(): React.JSX.Element {
       <CardContent>
         {!provisioned ? (
           <div className="flex items-center gap-2 rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
-            <CloudOff className="h-4 w-4" /> Caja sin vincular. Configura la vinculación con AgroOne
+            <CloudOff className="h-4 w-4" /> Caja sin vincular. Configura la vinculación con Galas Cloud
             arriba para poder sincronizar.
           </div>
         ) : last ? (
@@ -173,7 +173,7 @@ export function SyncCard(): React.JSX.Element {
                 <Link2Off className="h-4 w-4 text-destructive" />
                 <span>
                   <strong>{health.productosSinMapeo}</strong> producto
-                  {health.productosSinMapeo === 1 ? '' : 's'} sin vincular a AgroOne
+                  {health.productosSinMapeo === 1 ? '' : 's'} sin vincular a Galas Cloud
                   {health.ventasBloqueadas > 0 && (
                     <>
                       {' '}
@@ -201,7 +201,7 @@ export function SyncCard(): React.JSX.Element {
               Son productos creados en esta caja antes de que el catálogo pasara a administrarse
               solo desde el Centro de Acopio. Mientras no estén vinculados, las ventas que los
               incluyan no pueden subir al máster. La reconciliación los busca por código de barras y
-              por SKU; los que no existan allá hay que darlos de alta en AgroOne.
+              por SKU; los que no existan allá hay que darlos de alta en Galas Cloud.
             </p>
             <div className="space-y-1">
               {health.orphans.slice(0, 5).map((o) => (
@@ -232,7 +232,7 @@ export function SyncCard(): React.JSX.Element {
                 <Upload className="h-4 w-4" />
                 <span>
                   <strong>{push.pending}</strong> venta{push.pending === 1 ? '' : 's'} pendiente
-                  {push.pending === 1 ? '' : 's'} de subir a AgroOne
+                  {push.pending === 1 ? '' : 's'} de subir a Galas Cloud
                 </span>
               </div>
               <Button

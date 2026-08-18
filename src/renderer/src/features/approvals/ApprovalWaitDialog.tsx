@@ -20,7 +20,7 @@ type Props = {
 }
 
 /**
- * Espera a que el administrador resuelva la solicitud en AgroOne.
+ * Espera a que el administrador resuelva la solicitud en Galas Cloud.
  *
  * Cerrar el diálogo NO cancela nada: la solicitud sigue viva del otro lado y el
  * administrador puede aprobarla más tarde. Se dice explícitamente para que el
@@ -55,7 +55,7 @@ export function ApprovalWaitDialog({
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>
           <DialogDescription>
-            Solicitud #{requestId} enviada a AgroOne. Un administrador debe aprobarla.
+            Solicitud #{requestId} enviada a Galas Cloud. Un administrador debe aprobarla.
           </DialogDescription>
         </DialogHeader>
 

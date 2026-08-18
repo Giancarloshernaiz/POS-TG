@@ -25,7 +25,14 @@ import { useFx } from '@renderer/stores/fx'
 import { useActiveSession } from '@renderer/features/cash/hooks'
 import { OpenCashForm } from '@renderer/features/cash/OpenCashForm'
 import { useAuth } from '@renderer/stores/auth'
-import { findByCode, useCreateSale, printTicket, useSellers, useDiscountUsd } from './hooks'
+import {
+  findByCode,
+  searchProducts,
+  useCreateSale,
+  printTicket,
+  useSellers,
+  useDiscountUsd
+} from './hooks'
 import { CustomerCedulaSlot } from './CustomerCedulaSlot'
 import { formatMoney, formatVes } from '@renderer/lib/money'
 import { PAYMENT_METHODS, type PaymentMethod } from '@renderer/lib/paymentMethods'
@@ -92,8 +99,45 @@ function POSContent(): React.JSX.Element {
   }, [customerReady, cart])
 
   const [code, setCode] = useState('')
+  const [productSuggestions, setProductSuggestions] = useState<ProductDTO[]>([])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+  const [searchingProducts, setSearchingProducts] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
   const [pays, setPays] = useState<PayEntry[]>([])
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    const term = code.trim()
+    if (!customerReady || !term) {
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      setSearchingProducts(true)
+      void searchProducts(term)
+        .then((products) => {
+          if (cancelled) return
+          setProductSuggestions(products.slice(0, 8))
+          setSuggestionsOpen(true)
+          setActiveSuggestion(-1)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setProductSuggestions([])
+          setSuggestionsOpen(true)
+          setActiveSuggestion(-1)
+        })
+        .finally(() => {
+          if (!cancelled) setSearchingProducts(false)
+        })
+    }, 180)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [code, customerReady])
 
   // ---- Totals ----
   const grossSubtotal = cart.lines.reduce((s, l) => s + l.unitPrice * l.qty, 0)
@@ -168,6 +212,15 @@ function POSContent(): React.JSX.Element {
     })
   }
 
+  function selectProduct(product: ProductDTO): void {
+    addProduct(product)
+    setCode('')
+    setProductSuggestions([])
+    setSuggestionsOpen(false)
+    setActiveSuggestion(-1)
+    setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
   async function handleCode(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const c = code.trim()
@@ -179,12 +232,14 @@ function POSContent(): React.JSX.Element {
           'Producto no encontrado. Debe crearse en Tiendas Gala y sincronizarse con el POS.'
         )
         setCode('')
+        setProductSuggestions([])
+        setSuggestionsOpen(false)
+        setSearchingProducts(false)
+        setActiveSuggestion(-1)
         searchRef.current?.focus()
         return
       }
-      addProduct(product)
-      setCode('')
-      searchRef.current?.focus()
+      selectProduct(product)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     }
@@ -272,7 +327,7 @@ function POSContent(): React.JSX.Element {
           return {
             method: p.method,
             amountUsd: p.amountCents,
-            // AgroOne guarda el monto en la moneda indicada. Para VES se
+            // Galas Cloud guarda el monto en la moneda indicada. Para VES se
             // conserva el equivalente real, no el valor numérico en USD.
             amountOriginal:
               currency === 'VES' && rate
@@ -398,15 +453,111 @@ function POSContent(): React.JSX.Element {
             <Input
               ref={searchRef}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => {
+                const nextCode = e.target.value
+                const hasSearch = Boolean(nextCode.trim())
+                setCode(nextCode)
+                setProductSuggestions([])
+                setSuggestionsOpen(hasSearch)
+                setSearchingProducts(hasSearch)
+                setActiveSuggestion(-1)
+              }}
+              onFocus={() => {
+                if (code.trim()) setSuggestionsOpen(true)
+              }}
+              onBlur={() => {
+                window.setTimeout(() => setSuggestionsOpen(false), 120)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSuggestionsOpen(false)
+                  setActiveSuggestion(-1)
+                  return
+                }
+                if (e.key === 'ArrowDown' && productSuggestions.length > 0) {
+                  e.preventDefault()
+                  setSuggestionsOpen(true)
+                  setActiveSuggestion((current) =>
+                    current >= productSuggestions.length - 1 ? 0 : current + 1
+                  )
+                  return
+                }
+                if (e.key === 'ArrowUp' && productSuggestions.length > 0) {
+                  e.preventDefault()
+                  setSuggestionsOpen(true)
+                  setActiveSuggestion((current) =>
+                    current <= 0 ? productSuggestions.length - 1 : current - 1
+                  )
+                  return
+                }
+                if (
+                  e.key === 'Enter' &&
+                  suggestionsOpen &&
+                  activeSuggestion >= 0 &&
+                  productSuggestions[activeSuggestion]
+                ) {
+                  e.preventDefault()
+                  selectProduct(productSuggestions[activeSuggestion])
+                }
+              }}
               placeholder={
                 customerReady
-                  ? 'Escanea código de barras o escribe SKU…'
+                  ? 'Escanea un código o busca por SKU o nombre…'
                   : 'Primero identifica al cliente o toca "Sin cliente"'
               }
               className="pl-8"
               disabled={!customerReady}
             />
+            {suggestionsOpen && customerReady && code.trim() && (
+              <div
+                role="listbox"
+                aria-label="Productos encontrados"
+                className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
+              >
+                {searchingProducts ? (
+                  <div className="flex items-center justify-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Buscando productos…
+                  </div>
+                ) : productSuggestions.length > 0 ? (
+                  productSuggestions.map((product, index) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      role="option"
+                      aria-selected={activeSuggestion === index}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setActiveSuggestion(index)}
+                      onClick={() => selectProduct(product)}
+                      className={`flex w-full items-center justify-between gap-4 rounded-sm px-3 py-2 text-left text-sm transition-colors ${
+                        activeSuggestion === index
+                          ? 'bg-accent text-accent-foreground'
+                          : 'hover:bg-accent'
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{product.name}</span>
+                        <span className="block truncate font-mono text-xs text-muted-foreground">
+                          SKU: {product.sku}
+                          {product.barcode ? ` · Código: ${product.barcode}` : ''}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block font-mono font-semibold">
+                          {formatMoney(product.effectivePrice)}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          Stock: {product.stock}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                    No hay productos que coincidan con la búsqueda.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <Button type="submit" disabled={!customerReady}>
             <Plus className="h-4 w-4" />

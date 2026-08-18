@@ -1,8 +1,8 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
 import { sales } from './sales'
 
-// Progreso de push hacia AgroOne por venta (§31.7). NONE = no intentado aún;
-// HEADER_DONE = cabecera creada en AgroOne (agroSaleId conocido, líneas pendientes);
+// Progreso de push hacia Galas Cloud por venta (§31.7). NONE = no intentado aún;
+// HEADER_DONE = cabecera creada en Galas Cloud (agroSaleId conocido, líneas pendientes);
 // LINES_DONE = sincronización completa; ERROR = falló, reintentable.
 export const syncState = sqliteTable(
   'sync_state',

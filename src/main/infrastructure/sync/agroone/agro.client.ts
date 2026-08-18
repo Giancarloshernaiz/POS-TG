@@ -1,7 +1,7 @@
 import { logger } from '@main/logger'
 import type { StoreOptionDTO } from '@shared/ipc/contracts/device'
 
-// Capa anticorrupción hacia AgroOne (el máster de inventario externo, plan §31).
+// Capa anticorrupción hacia Galas Cloud (el máster de inventario externo, plan §31).
 // Aquí viven las llamadas REST y el mapeo de sus DTOs (nombres en español,
 // Decimals como string, IDs Int) hacia los tipos limpios del POS.
 
@@ -38,7 +38,7 @@ async function getJson<T>(url: string): Promise<T> {
 /**
  * Rechazo de negocio del máster (4xx con `error` redactado para el operador),
  * a diferencia de un fallo de transporte. Se distingue para no disfrazar de
- * "AgroOne no responde" un mensaje que en realidad sí vino del máster.
+ * "Galas Cloud no responde" un mensaje que en realidad sí vino del máster.
  */
 export class AgroBusinessError extends Error {
   constructor(
@@ -70,7 +70,7 @@ async function sendJson<T>(
       // Red caída, DNS, timeout: `fetch failed` a secas no le dice nada a nadie.
       const msg = e instanceof Error ? e.message : String(e)
       logger.warn({ err: e, url }, 'agro: send failed')
-      throw new AgroError('AGRO_UNREACHABLE', `AgroOne no responde (${msg})`)
+      throw new AgroError('AGRO_UNREACHABLE', `Galas Cloud no responde (${msg})`)
     }
     const text = await res.text()
     const data = text ? (JSON.parse(text) as T & { error?: string; message?: string }) : ({} as T)
@@ -84,7 +84,7 @@ async function sendJson<T>(
   }
 }
 
-/** AgroOne serializa Decimal a veces como number, a veces como string. */
+/** Galas Cloud serializa Decimal a veces como number, a veces como string. */
 function num(v: unknown): number {
   const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN
   return Number.isFinite(n) ? n : 0
@@ -97,7 +97,7 @@ async function get<T>(baseUrl: string, path: string): Promise<T> {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     logger.warn({ err: e, url }, 'agro: GET failed')
-    throw new AgroError('AGRO_UNREACHABLE', `AgroOne no responde (${path}): ${msg}`)
+    throw new AgroError('AGRO_UNREACHABLE', `Galas Cloud no responde (${path}): ${msg}`)
   }
 }
 
@@ -123,7 +123,7 @@ export async function fetchStores(baseUrl: string): Promise<StoreOptionDTO[]> {
   }))
 }
 
-// ---- Tipos limpios de pull (mapeados desde AgroOne) ----
+// ---- Tipos limpios de pull (mapeados desde Galas Cloud) ----
 
 export type AgroCategory = {
   agroId: number
@@ -401,7 +401,7 @@ export type SaleFullResult = { agroSaleId: number; idempotent: boolean }
 
 /**
  * POST /sales/sale/create-full → cabecera + líneas + descuento de ExistenciaTienda
- * en una sola transacción atómica de AgroOne (reemplaza el viejo par create+batch,
+ * en una sola transacción atómica de Galas Cloud (reemplaza el viejo par create+batch,
  * que dejaba una cabecera huérfana si el paso de líneas fallaba por falta de stock).
  * Idempotente por `idempotencyKey`: un reintento con la misma clave devuelve la
  * venta ya creada (`idempotent: true`) en vez de duplicarla.
@@ -430,7 +430,7 @@ export async function postSaleFull(
       price: l.priceUsd,
       // `descuento_monto` es siempre monto en USD y no admite interpretación.
       // NO usar `descuento`: ese campo tiene heurística por rango en el máster
-      // (el frontend de AgroOne lo manda como porcentaje), así que un descuento
+      // (el frontend de Galas Cloud lo manda como porcentaje), así que un descuento
       // de $0.50 se guardaba como 50% y uno de $10 como 10%.
       descuento_monto: l.descuentoUsd
     }))
@@ -581,11 +581,11 @@ export async function receiveDispatchScan(
   }
 }
 
-// ---- Autorizaciones: la caja pide, el administrador aprueba en AgroOne ------
+// ---- Autorizaciones: la caja pide, el administrador aprueba en Galas Cloud ------
 //
 // Devolución y reimpresión de factura no las decide la caja. El POS crea una
 // solicitud en el máster y espera; el administrador la aprueba o rechaza desde
-// AgroOne, que ya tiene la bandeja de pendientes. En el caso de la devolución,
+// Galas Cloud, que ya tiene la bandeja de pendientes. En el caso de la devolución,
 // aprobar además EJECUTA el efecto allá (repone stock, emite el crédito): la
 // caja solo lo refleja en su próximo pull.
 
@@ -686,7 +686,7 @@ export async function fetchAuthorizationRequest(
 
 // ---- Escrituras de CATÁLOGO hacia el máster (§31.4) --------------------------
 //
-// AgroOne (Centro de Acopio) es el único dueño del catálogo global: productos y
+// Galas Cloud (Centro de Acopio) es el único dueño del catálogo global: productos y
 // categorías se crean y editan allá, y vuelven por pull. El POS nunca crea una
 // fila de catálogo sin `agroId` — un producto sin mapeo hace que toda venta que
 // lo incluya quede trabada para siempre en `sync_state.phase = ERROR`.
@@ -712,7 +712,7 @@ function toAgroProductBody(input: Partial<AgroProductInput>): Record<string, unk
   if (input.descripcion !== undefined) body.descripcion = input.descripcion ?? undefined
   if (input.categoriaAgroId !== undefined) body.categoriaId = input.categoriaAgroId
   if (input.unidadMedida !== undefined) body.unidadMedida = input.unidadMedida
-  // El POS trabaja en centavos, AgroOne en unidades monetarias.
+  // El POS trabaja en centavos, Galas Cloud en unidades monetarias.
   if (input.precioVentaCents !== undefined) body.precioVenta = input.precioVentaCents / 100
   if (input.costoPromedioCents !== undefined && input.costoPromedioCents !== null) {
     body.costoPromedio = input.costoPromedioCents / 100
@@ -804,7 +804,7 @@ export async function findProductInAgroByCode(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     logger.warn({ err: e, url }, 'agro: by-code failed')
-    throw new AgroError('AGRO_UNREACHABLE', `AgroOne no responde (by-code): ${msg}`)
+    throw new AgroError('AGRO_UNREACHABLE', `Galas Cloud no responde (by-code): ${msg}`)
   } finally {
     clearTimeout(timer)
   }
@@ -813,13 +813,47 @@ export async function findProductInAgroByCode(
 /** POST /sales/clients/ → alta de cliente en el máster. */
 export async function createClient(
   baseUrl: string,
-  input: { nombreContacto: string; cedula: string; descuentoEspecialBp?: number }
+  input: {
+    nombreContacto: string
+    cedula: string
+    telefono?: string | null
+    correo?: string | null
+    direccion?: string | null
+    descuentoEspecialBp?: number
+  }
 ): Promise<number> {
   const url = `${normalizeBaseUrl(baseUrl)}/api/v1/sales/clients/`
   const data = await sendJson<{ client: { id: number } }>(url, 'POST', {
     nombre_contacto: input.nombreContacto,
     cedula: input.cedula,
+    telefono: input.telefono,
+    correo: input.correo,
+    direccion: input.direccion,
     descuento_especial: (input.descuentoEspecialBp ?? 0) / 100
   })
   return data.client.id
+}
+
+/** PATCH /sales/clients/:id → actualiza los datos editables en el maestro. */
+export async function updateClient(
+  baseUrl: string,
+  agroId: number,
+  input: {
+    nombreContacto: string
+    cedula: string
+    telefono: string | null
+    correo: string | null
+    direccion: string | null
+    descuentoEspecialBp: number
+  }
+): Promise<void> {
+  const url = `${normalizeBaseUrl(baseUrl)}/api/v1/sales/clients/${agroId}`
+  await sendJson(url, 'PATCH', {
+    nombre_contacto: input.nombreContacto,
+    cedula: input.cedula,
+    telefono: input.telefono,
+    correo: input.correo,
+    direccion: input.direccion,
+    descuento_especial: input.descuentoEspecialBp / 100
+  })
 }

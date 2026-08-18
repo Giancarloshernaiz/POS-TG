@@ -12,10 +12,8 @@ export async function findByCode(code: string): Promise<ProductDTO | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEMP BYPASS — búsqueda manual de productos para testear sin lector de código.
-// Permite al cajero buscar/elegir productos en lugar de escanear. ELIMINAR (o
-// dejar tras un flag de "modo entrenamiento") antes de producción: el flujo real
-// del POS es por escaneo. Ver docs/GUIA.md §"Bypass temporal".
+// Búsqueda manual de respaldo para operar cuando el lector no esté disponible.
+// Comparte el mismo catálogo local que el escáner y no requiere autorización.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function searchProducts(term: string): Promise<ProductDTO[]> {
   const res = await api.catalog.listProducts({

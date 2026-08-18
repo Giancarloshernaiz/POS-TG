@@ -35,7 +35,7 @@ class CatalogError extends Error {
   }
 }
 
-// ---- Catálogo: el dueño es AgroOne (Centro de Acopio), no el POS -----------
+// ---- Catálogo: el dueño es Galas Cloud (Centro de Acopio), no el POS -----------
 //
 // Productos y categorías se crean/editan SIEMPRE en el máster y bajan por pull.
 // El POS no puede crear filas locales de catálogo: una fila sin `agroId` deja
@@ -50,7 +50,7 @@ async function requireAgroBaseUrl(): Promise<string> {
   if (!isProvisioned(identity) || !identity.agroBaseUrl) {
     throw new CatalogError(
       'NOT_PROVISIONED',
-      'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes antes de dar de alta productos.'
+      'Esta caja no está vinculada a Galas Cloud. Configúrala en Ajustes antes de dar de alta productos.'
     )
   }
   return identity.agroBaseUrl
@@ -62,7 +62,7 @@ function toCatalogSyncError(err: unknown, accion: string): CatalogError {
   const msg = err instanceof Error ? err.message : String(err)
   return new CatalogError(
     'AGRO_UNREACHABLE',
-    `No se pudo ${accion} en AgroOne (${msg}). El catálogo lo administra el Centro de Acopio: hace falta conexión.`
+    `No se pudo ${accion} en Galas Cloud (${msg}). El catálogo lo administra el Centro de Acopio: hace falta conexión.`
   )
 }
 
@@ -76,7 +76,7 @@ async function requireCategoryAgroId(
   if (!cat.agroId) {
     throw new CatalogError(
       'CATEGORY_NOT_SYNCED',
-      `La categoría "${cat.name}" todavía no existe en AgroOne. Sincroniza antes de usarla.`
+      `La categoría "${cat.name}" todavía no existe en Galas Cloud. Sincroniza antes de usarla.`
     )
   }
   return cat.agroId
@@ -198,7 +198,7 @@ const productSelect = {
 
 // P2P (§8.4): comparte altas/ediciones de catálogo con las demás cajas de la
 // tienda (LWW). El reducer receptor ignora esto si la fila ya tiene agroId
-// (AgroOne converge ese caso vía pull, no P2P) — ver catalog.reducer.ts.
+// (Galas Cloud converge ese caso vía pull, no P2P) — ver catalog.reducer.ts.
 async function emitProductUpsertEvent(db: ReturnType<typeof getDb>, id: string): Promise<void> {
   const row = await db.select().from(products).where(eq(products.id, id)).get()
   if (!row) return
@@ -386,7 +386,7 @@ export const catalogHandlers = {
       if (!current.agroId) {
         throw new CatalogError(
           'CATEGORY_NOT_SYNCED',
-          `La categoría "${current.name}" todavía no existe en AgroOne. Sincroniza antes de editarla.`
+          `La categoría "${current.name}" todavía no existe en Galas Cloud. Sincroniza antes de editarla.`
         )
       }
       const baseUrl = await requireAgroBaseUrl()
@@ -501,7 +501,7 @@ export const catalogHandlers = {
     if (!current.agroId) {
       throw new CatalogError(
         'NOT_SYNCED',
-        `"${current.name}" no está sincronizado con AgroOne. Usa la reconciliación de catálogo en Ajustes.`
+        `"${current.name}" no está sincronizado con Galas Cloud. Usa la reconciliación de catálogo en Ajustes.`
       )
     }
 
@@ -548,7 +548,7 @@ export const catalogHandlers = {
 
     // Campos que pertenecen al máster: se propagan allá ANTES de tocar la copia
     // local, porque el próximo `pullAll` sobrescribe estos mismos campos con lo
-    // que diga AgroOne. Editarlos solo en local es un cambio que se pierde.
+    // que diga Galas Cloud. Editarlos solo en local es un cambio que se pierde.
     const CAMPOS_DEL_MASTER = [
       'sku',
       'barcode',
@@ -565,7 +565,7 @@ export const catalogHandlers = {
       if (!current.agroId) {
         throw new CatalogError(
           'PRODUCT_NOT_SYNCED',
-          `"${current.name}" todavía no está sincronizado con AgroOne. Usa la reconciliación de catálogo en Ajustes antes de editarlo.`
+          `"${current.name}" todavía no está sincronizado con Galas Cloud. Usa la reconciliación de catálogo en Ajustes antes de editarlo.`
         )
       }
       const baseUrl = await requireAgroBaseUrl()

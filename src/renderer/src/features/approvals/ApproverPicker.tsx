@@ -33,7 +33,7 @@ export function ApproverPicker({ seleccion, onChange }: Props): React.JSX.Elemen
   if (error) {
     return (
       <p className="py-2 text-sm text-destructive">
-        No se pudo consultar quién puede autorizar. Revisa la conexión con AgroOne.
+        No se pudo consultar quién puede autorizar. Revisa la conexión con Galas Cloud.
       </p>
     )
   }
@@ -42,7 +42,7 @@ export function ApproverPicker({ seleccion, onChange }: Props): React.JSX.Elemen
   if (approvers.length === 0) {
     return (
       <p className="py-2 text-sm text-destructive">
-        No hay usuarios con permiso para autorizar en AgroOne.
+        No hay usuarios con permiso para autorizar en Galas Cloud.
       </p>
     )
   }

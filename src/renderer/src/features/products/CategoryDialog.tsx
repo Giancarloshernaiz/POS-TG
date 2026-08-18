@@ -50,7 +50,7 @@ const NO_PARENT = '__root__'
 const CUSTOM_ICON = '__custom__'
 
 // Íconos comunes para categorías de retail. Nombres de lucide-react — espejo
-// visual del campo "simbolo" de Categoria en AgroOne (ellos usan otra versión
+// visual del campo "simbolo" de Categoria en Galas Cloud (ellos usan otra versión
 // de lucide, así que no todos los nombres calzan 1:1; ver CategoryIcon abajo).
 // Import explícito (no `import *`) para no meter las ~5800 íconos al bundle.
 const ICON_PRESETS = [
@@ -82,7 +82,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Sparkles
 }
 
-/** Resuelve un nombre de ícono con fallback seguro (cubre nombres de AgroOne que no tengamos). */
+/** Resuelve un nombre de ícono con fallback seguro (cubre nombres de Galas Cloud que no tengamos). */
 function CategoryIcon({
   name,
   className
@@ -236,7 +236,7 @@ export function CategoryDialog({ open, onOpenChange }: Props): React.JSX.Element
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Ícono (espejo del &quot;símbolo&quot; en AgroOne)</Label>
+            <Label className="text-xs">Ícono (espejo del &quot;símbolo&quot; en Galas Cloud)</Label>
             <div className="flex items-center gap-1">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border">
                 <CategoryIcon name={draft.icon || null} className="h-4 w-4" />

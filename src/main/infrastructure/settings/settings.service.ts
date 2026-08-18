@@ -10,7 +10,7 @@ export const SETTINGS_KEYS = {
   AGRO_LAST_PULL: 'sync.agro.lastPull',
   AGRO_CONSUMIDOR_FINAL: 'sync.agro.consumidorFinal',
   DISCOUNT_USD: 'sales.discountUsd',
-  // Usuario de AgroOne bajo el que esta caja firma sus solicitudes de
+  // Usuario de Galas Cloud bajo el que esta caja firma sus solicitudes de
   // autorización. Es un usuario de máquina por caja: el nombre del cajero real
   // viaja en `metadata`, así no hay que dar de alta a cada persona en el máster.
   AGRO_REQUESTER_USER: 'sync.agro.requesterUserId'

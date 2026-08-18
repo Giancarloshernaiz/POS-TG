@@ -1,0 +1,1 @@
+ALTER TABLE customers ADD COLUMN sync_pending INTEGER NOT NULL DEFAULT 0;

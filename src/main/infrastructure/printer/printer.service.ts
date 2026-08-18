@@ -103,13 +103,13 @@ export async function printSaleTicket(
     throw new PrinterError('PRINTER_OFFLINE', `no se pudo conectar: ${msg}`)
   }
 
-  // ---- Formato de factura, espejo del de AgroOne ------------------------
+  // ---- Formato de factura, espejo del de Galas Cloud ------------------------
   //
   // La estructura y el orden replican `apps/frontend/utils/printInvoice.ts`
   // del máster para que la factura del mostrador y la que reimprime el
   // administrador sean la misma. Diferencia deliberada: los datos de la
   // empresa salen del perfil de tienda en vez de estar escritos en el código,
-  // que es lo que hace AgroOne.
+  // que es lo que hace Galas Cloud.
   //
   // Importes de línea en USD, igual que el máster. Los equivalentes en Bs van
   // en el bloque de totales, según cómo se pagó.

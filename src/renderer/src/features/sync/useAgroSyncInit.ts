@@ -4,7 +4,7 @@ import { api } from '@renderer/lib/api'
 import { useFx } from '@renderer/stores/fx'
 
 /**
- * Subscribes to auto-pull events from the AgroOne scheduler. When the master
+ * Subscribes to auto-pull events from the Galas Cloud scheduler. When the master
  * data refreshes, invalidate the affected caches and refresh the FX rate.
  * Call once near the app root (after auth).
  */

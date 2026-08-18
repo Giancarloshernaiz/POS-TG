@@ -12,7 +12,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { useDeviceIdentity } from './hooks'
 import { ProvisioningWizard } from './ProvisioningWizard'
 
-// Identidad de la caja + vinculación con AgroOne (plan §31.3).
+// Identidad de la caja + vinculación con Galas Cloud (plan §31.3).
 export function DeviceCard(): React.JSX.Element {
   const { data: identity, isLoading } = useDeviceIdentity()
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -28,7 +28,7 @@ export function DeviceCard(): React.JSX.Element {
               <MonitorSmartphone className="h-4 w-4" /> Identidad de la caja
             </CardTitle>
             <CardDescription>
-              Vincula esta caja a una tienda del máster AgroOne para sincronizar inventario y
+              Vincula esta caja a una tienda del máster Galas Cloud para sincronizar inventario y
               ventas.
             </CardDescription>
           </div>
@@ -43,7 +43,7 @@ export function DeviceCard(): React.JSX.Element {
                 </>
               ) : (
                 <>
-                  <Link2 className="h-4 w-4" /> Vincular con AgroOne
+                  <Link2 className="h-4 w-4" /> Vincular con Galas Cloud
                 </>
               )}
             </Button>
@@ -73,7 +73,7 @@ export function DeviceCard(): React.JSX.Element {
               {identity.storeName ? `${identity.storeName} (#${identity.storeId})` : '—'}
             </Field>
             <Field label="Sede">{identity.sedeId !== null ? `#${identity.sedeId}` : '—'}</Field>
-            <Field label="AgroOne">{identity.agroBaseUrl ?? '—'}</Field>
+            <Field label="Galas Cloud">{identity.agroBaseUrl ?? '—'}</Field>
             <Field label="ID de nodo">
               <span className="font-mono text-xs" title={identity.nodeId}>
                 …{identity.nodeId.slice(-8)}

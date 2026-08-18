@@ -26,7 +26,7 @@ type Props = {
 
 /**
  * Selección de qué devolver. La caja solo propone: quién repone el stock y
- * emite el crédito es AgroOne, cuando el administrador aprueba.
+ * emite el crédito es Galas Cloud, cuando el administrador aprueba.
  */
 export function ReturnRequestDialog({
   saleId,
@@ -82,7 +82,7 @@ export function ReturnRequestDialog({
             <Undo2 className="h-5 w-5" /> Solicitar devolución — {saleNumber}
           </DialogTitle>
           <DialogDescription>
-            Indicá cuántas unidades devuelve el cliente. La devolución la ejecuta AgroOne cuando
+            Indicá cuántas unidades devuelve el cliente. La devolución la ejecuta Galas Cloud cuando
             el administrador la apruebe: ahí se repone el stock y se genera el crédito.
           </DialogDescription>
         </DialogHeader>

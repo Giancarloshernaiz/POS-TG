@@ -13,16 +13,19 @@ export const customers = sqliteTable(
     creditLimit: integer('credit_limit').notNull().default(0),
     currentBalance: integer('current_balance').notNull().default(0),
     // Descuento especial del cliente en basis points (100 = 1%), espejo de
-    // Clientes.descuento_especial en AgroOne. No se aplica aún automáticamente
+    // Clientes.descuento_especial en Galas Cloud. No se aplica aún automáticamente
     // en el pricing de venta (§ver CLAUDE memory / conversación).
     specialDiscountBp: integer('special_discount_bp').notNull().default(0),
-    /** Saldo total informado por AgroOne: devoluciones + recompensa de fidelidad. */
+    /** Saldo total informado por Galas Cloud: devoluciones + recompensa de fidelidad. */
     favorBalance: integer('favor_balance').notNull().default(0),
     returnCreditBalance: integer('return_credit_balance').notNull().default(0),
     fidelityBalance: integer('fidelity_balance').notNull().default(0),
     fidelityAccumulated: integer('fidelity_accumulated').notNull().default(0),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
     agroId: integer('agro_id'),
+    // Se mantiene en true hasta que los datos editables del cliente hayan sido
+    // confirmados por Galas Cloud. Evita que un pull revierta cambios offline.
+    syncPending: integer('sync_pending', { mode: 'boolean' }).notNull().default(false),
     lwwHlc: text('lww_hlc'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()

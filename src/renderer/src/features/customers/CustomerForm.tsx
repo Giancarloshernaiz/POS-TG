@@ -22,8 +22,6 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { RIF_TYPES } from '@shared/fiscal'
-import { fromCents, toCents } from '@renderer/lib/money'
-import { MoneyInput } from '@renderer/components/MoneyInput'
 import type { CustomerDTO } from '@shared/ipc/contracts/customers'
 import { useCreateCustomer, useUpdateCustomer } from './hooks'
 
@@ -36,8 +34,6 @@ const schema = z.object({
   phone: z.string().max(50).optional().or(z.literal('')),
   email: z.string().max(200).optional().or(z.literal('')),
   address: z.string().max(300).optional().or(z.literal('')),
-  creditLimit: z.union([z.number().nonnegative(), z.nan()]).optional(),
-  specialDiscountPct: z.union([z.number().min(0).max(100), z.nan()]).optional(),
   active: z.boolean()
 })
 
@@ -70,8 +66,6 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
       phone: '',
       email: '',
       address: '',
-      creditLimit: 0,
-      specialDiscountPct: 0,
       active: true
     }
   })
@@ -87,8 +81,6 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
               phone: customer.phone ?? '',
               email: customer.email ?? '',
               address: customer.address ?? '',
-              creditLimit: fromCents(customer.creditLimit),
-              specialDiscountPct: customer.specialDiscountBp / 100,
               active: customer.active
             }
           : undefined
@@ -109,21 +101,17 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
         phone: values.phone ? values.phone : null,
         email: values.email ? values.email : null,
         address: values.address ? values.address : null,
-        creditLimit:
-          values.creditLimit != null && !Number.isNaN(values.creditLimit)
-            ? toCents(values.creditLimit)
-            : 0,
-        specialDiscountBp:
-          values.specialDiscountPct != null && !Number.isNaN(values.specialDiscountPct)
-            ? Math.round(values.specialDiscountPct * 100)
-            : 0,
         active: values.active
       }
       if (customer) {
         await updateMut.mutateAsync({ id: customer.id, ...payload })
         toast.success('Cliente actualizado')
       } else {
-        await createMut.mutateAsync(payload)
+        await createMut.mutateAsync({
+          ...payload,
+          creditLimit: 0,
+          specialDiscountBp: 0
+        })
         toast.success('Cliente creado')
       }
       onOpenChange(false)
@@ -137,7 +125,6 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
 
   const docType = watch('docType')
   const active = watch('active')
-  const creditLimit = watch('creditLimit')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,36 +185,6 @@ export function CustomerForm({ open, onOpenChange, customer }: Props): React.JSX
           <div className="space-y-2">
             <Label htmlFor="address">Dirección</Label>
             <Input id="address" {...register('address')} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Límite de crédito</Label>
-              <MoneyInput
-                valueCents={toCents(
-                  typeof creditLimit === 'number' && !Number.isNaN(creditLimit) ? creditLimit : 0
-                )}
-                onChangeCents={(c) => setValue('creditLimit', fromCents(c), { shouldDirty: true })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Monto máximo que puede deber en ventas a crédito. 0 = sin crédito.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="specialDiscountPct">Descuento especial (%)</Label>
-              <Input
-                id="specialDiscountPct"
-                type="number"
-                min={0}
-                max={100}
-                step="0.01"
-                {...register('specialDiscountPct', { valueAsNumber: true })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Espejo de &quot;Descuento especial&quot; en AgroOne. Se sincroniza; aún no se aplica
-                automático al precio en el POS.
-              </p>
-            </div>
           </div>
 
           <label className="flex cursor-pointer items-center gap-2 text-sm">

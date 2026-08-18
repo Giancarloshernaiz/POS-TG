@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 // Recepción en la tienda de los despachos que envía el Centro de Acopio.
-// El despacho y las existencias son del máster (AgroOne); la caja escanea.
+// El despacho y las existencias son del máster (Galas Cloud); la caja escanea.
 
 const dispatchLine = z.object({
   lineaId: z.number(),

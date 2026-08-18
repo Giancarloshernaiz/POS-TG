@@ -6,7 +6,7 @@ import { getP2pStatus } from '@main/infrastructure/sync/p2p/p2p.service'
 // en este instante, recalculado en cada llamada — se re-elige solo con la
 // próxima caída/reconexión, sin protocolo de consenso ni coordinación extra.
 //
-// Solo protege escrituras GLOBALES/compartidas hacia AgroOne (hoy: la
+// Solo protege escrituras GLOBALES/compartidas hacia Galas Cloud (hoy: la
 // creación de "Consumidor Final"). El push de ventas propias NO se gatea:
 // cada caja solo ve y empuja sus propias ventas (no hay replicación
 // cross-nodo de ventas todavía), así que ahí no existe riesgo de duplicado.

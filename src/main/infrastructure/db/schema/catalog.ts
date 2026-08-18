@@ -12,11 +12,11 @@ export const categories = sqliteTable(
       .default('none'),
     discountValue: integer('discount_value').notNull().default(0),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
-    // Nombre de ícono (lucide-react), espejo de Categoria.simbolo en AgroOne.
+    // Nombre de ícono (lucide-react), espejo de Categoria.simbolo en Galas Cloud.
     icon: text('icon'),
     agroId: integer('agro_id'),
     // HLC de la última escritura P2P aplicada (LWW, §8.4). Solo relevante
-    // mientras agroId es null (autoría POS); AgroOne converge lo demás.
+    // mientras agroId es null (autoría POS); Galas Cloud converge lo demás.
     lwwHlc: text('lww_hlc'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()
@@ -41,7 +41,7 @@ export const products = sqliteTable(
     costPrice: integer('cost_price'),
     taxRateBp: integer('tax_rate_bp').notNull().default(0),
     tracksSerial: integer('tracks_serial', { mode: 'boolean' }).notNull().default(false),
-    // Unidad de venta, espejo de Producto.unidadMedida en AgroOne (UNIDAD, KG, LT, ...).
+    // Unidad de venta, espejo de Producto.unidadMedida en Galas Cloud (UNIDAD, KG, LT, ...).
     unitOfMeasure: text('unit_of_measure').notNull().default('UNIDAD'),
     lowStockThreshold: integer('low_stock_threshold'),
     discountType: text('discount_type', { enum: ['none', 'percent', 'amount'] })

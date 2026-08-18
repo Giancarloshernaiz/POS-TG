@@ -28,7 +28,7 @@ type Props = {
   identity: DeviceIdentityDTO
 }
 
-// Wizard de vinculación: conecta con AgroOne, elige la tienda de esta caja,
+// Wizard de vinculación: conecta con Galas Cloud, elige la tienda de esta caja,
 // nombra la caja y guarda la identidad (plan §31.3).
 export function ProvisioningWizard({ open, onClose, identity }: Props): React.JSX.Element {
   const listStores = useListStores()
@@ -47,13 +47,13 @@ export function ProvisioningWizard({ open, onClose, identity }: Props): React.JS
     try {
       const found = await listStores.mutateAsync({ agroBaseUrl: baseUrl })
       setStores(found)
-      if (found.length === 0) toast.warning('AgroOne no devolvió tiendas')
+      if (found.length === 0) toast.warning('Galas Cloud no devolvió tiendas')
       else if (found.length === 1) setStoreId(String(found[0]!.id))
     } catch (e) {
       const code = e instanceof Error ? e.message : String(e)
       toast.error(
         code === 'AGRO_UNREACHABLE'
-          ? 'No se pudo conectar con AgroOne. Revisa la dirección y que esté encendido.'
+          ? 'No se pudo conectar con Galas Cloud. Revisa la dirección y que esté encendido.'
           : `Error: ${code}`
       )
     }
@@ -89,7 +89,7 @@ export function ProvisioningWizard({ open, onClose, identity }: Props): React.JS
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Vincular caja con AgroOne</DialogTitle>
+          <DialogTitle>Vincular caja con Galas Cloud</DialogTitle>
           <DialogDescription>
             Conecta esta caja al máster de inventario y elige a qué tienda pertenece.
           </DialogDescription>
@@ -98,7 +98,7 @@ export function ProvisioningWizard({ open, onClose, identity }: Props): React.JS
         <div className="space-y-4">
           {/* Paso 1: conexión */}
           <div className="space-y-1.5">
-            <Label htmlFor="agroUrl">Dirección de AgroOne</Label>
+            <Label htmlFor="agroUrl">Dirección de Galas Cloud</Label>
             <div className="flex gap-2">
               <Input
                 id="agroUrl"
@@ -123,7 +123,7 @@ export function ProvisioningWizard({ open, onClose, identity }: Props): React.JS
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              IP/host y puerto del servidor AgroOne en la red de la tienda.
+              IP/host y puerto del servidor Galas Cloud en la red de la tienda.
             </p>
           </div>
 

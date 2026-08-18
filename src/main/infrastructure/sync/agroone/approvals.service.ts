@@ -17,7 +17,7 @@ import {
 import { paidShareForReturnCents } from '@shared/sale-discounts'
 
 // Devolución y reimpresión de factura: la caja SOLICITA, el administrador
-// aprueba en AgroOne.
+// aprueba en Galas Cloud.
 //
 // Ambas se piden sobre una venta ya sincronizada, porque la solicitud viaja
 // referenciando el id de venta del máster (`AuthorizationRequest.ventaId`) y es
@@ -46,7 +46,7 @@ async function requireBaseUrl(): Promise<string> {
   if (!isProvisioned(identity) || !identity.agroBaseUrl) {
     throw new ApprovalError(
       'NOT_PROVISIONED',
-      'Esta caja no está vinculada a AgroOne. Configúrala en Ajustes.'
+      'Esta caja no está vinculada a Galas Cloud. Configúrala en Ajustes.'
     )
   }
   return identity.agroBaseUrl
@@ -73,7 +73,7 @@ async function requireSyncedSale(saleId: string): Promise<{ agroSaleId: number; 
   if (!st?.agroSaleId) {
     throw new ApprovalError(
       'SALE_NOT_SYNCED',
-      `La venta ${sale.number} todavía no llegó a AgroOne. Sincroniza desde Ajustes y volvé a intentar.`
+      `La venta ${sale.number} todavía no llegó a Galas Cloud. Sincroniza desde Ajustes y volvé a intentar.`
     )
   }
   return { agroSaleId: st.agroSaleId, number: sale.number }
@@ -115,7 +115,7 @@ async function crear(
     return req
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new ApprovalError('AGRO_UNREACHABLE', `No se pudo enviar la solicitud a AgroOne: ${msg}`)
+    throw new ApprovalError('AGRO_UNREACHABLE', `No se pudo enviar la solicitud a Galas Cloud: ${msg}`)
   }
 }
 
@@ -129,8 +129,8 @@ export async function requestReprint(
 }
 
 /**
- * Solicita devolución. Los ítems se traducen a los ids del máster: AgroOne no
- * conoce los ULID locales. Al aprobarse, AgroOne repone el stock y emite el
+ * Solicita devolución. Los ítems se traducen a los ids del máster: Galas Cloud no
+ * conoce los ULID locales. Al aprobarse, Galas Cloud repone el stock y emite el
  * crédito; la caja lo verá en su próximo pull.
  */
 export async function requestReturn(
@@ -166,7 +166,7 @@ export async function requestReturn(
     if (!prod?.agroId) {
       throw new ApprovalError(
         'INVALID_ITEMS',
-        `"${linea.description}" no está sincronizado con AgroOne y no se puede devolver`
+        `"${linea.description}" no está sincronizado con Galas Cloud y no se puede devolver`
       )
     }
     mapeados.push({ product_id: prod.agroId, quantity: item.qty })

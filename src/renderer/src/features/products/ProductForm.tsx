@@ -31,7 +31,7 @@ import { MoneyInput } from '@renderer/components/MoneyInput'
 const NONE = '__none__'
 const CUSTOM_UNIT = '__custom__'
 
-// Unidades comunes en AgroOne/Tiendas Gala (campo unidadMedida, texto libre allá).
+// Unidades comunes en Galas Cloud/Tiendas Gala (campo unidadMedida, texto libre allá).
 const UNIT_PRESETS = ['UNIDAD', 'KG', 'LT', 'CAJA', 'PAQUETE', 'GALON', 'METRO'] as const
 
 const schema = z.object({
@@ -334,7 +334,7 @@ export function ProductForm({ open, onOpenChange, product }: Props): React.JSX.E
               <p className="text-xs text-destructive">{errors.unitOfMeasure.message}</p>
             )}
             <p className="text-xs text-muted-foreground">
-              Espejo del campo &quot;Unidad de medida&quot; en AgroOne.
+              Espejo del campo &quot;Unidad de medida&quot; en Galas Cloud.
             </p>
           </div>
 

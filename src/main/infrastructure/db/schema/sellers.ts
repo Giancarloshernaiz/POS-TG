@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
-// Vendedores (comisionistas) de la tienda. Los define AgroOne y bajan por pull:
+// Vendedores (comisionistas) de la tienda. Los define Galas Cloud y bajan por pull:
 // el POS no los crea ni los edita, solo elige uno al cobrar.
 export const sellers = sqliteTable(
   'sellers',

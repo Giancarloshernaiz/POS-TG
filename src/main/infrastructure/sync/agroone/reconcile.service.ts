@@ -9,9 +9,9 @@ import { pushPendingSales } from './push.service'
 
 // Reconciliación de catálogo huérfano.
 //
-// Antes de que AgroOne fuera el único dueño del catálogo, la caja podía crear
+// Antes de que Galas Cloud fuera el único dueño del catálogo, la caja podía crear
 // productos locales sin `agroId`. Toda venta que los incluyera quedaba trabada
-// en `sync_state.phase = ERROR` con "producto sin mapeo AgroOne", de forma
+// en `sync_state.phase = ERROR` con "producto sin mapeo Galas Cloud", de forma
 // permanente: ningún reintento la arreglaba porque el producto no existía del
 // otro lado.
 //
