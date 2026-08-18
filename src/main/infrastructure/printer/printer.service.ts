@@ -311,6 +311,10 @@ export async function printCashReport(
   printer.drawLine()
   printer.leftRight('Ventas:', String(report.salesCount))
   printer.leftRight('Total ventas:', money(report.salesGross))
+  if (report.refundCount > 0) {
+    printer.leftRight('Devoluciones:', `${report.refundCount} / -${money(report.refundTotal)}`)
+    printer.leftRight('Venta neta:', money(report.netSales))
+  }
   printer.drawLine()
   printer.alignCenter()
   printer.bold(true)

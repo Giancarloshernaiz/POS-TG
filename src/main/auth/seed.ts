@@ -2,7 +2,7 @@ import { ulid } from 'ulid'
 import { eq } from 'drizzle-orm'
 import { getDb } from '@main/infrastructure/db/client'
 import { roles, users } from '@main/infrastructure/db/schema'
-import { DEFAULT_ROLES } from '@shared/auth/permissions'
+import { DEFAULT_ROLES, PERMISSIONS } from '@shared/auth/permissions'
 import { hashPassword } from './password'
 import { logger } from '@main/logger'
 
@@ -33,6 +33,22 @@ export async function seedAuthIfNeeded(): Promise<void> {
   if (rolesToInsert.length > 0) {
     await db.insert(roles).values(rolesToInsert).run()
     logger.info({ count: rolesToInsert.length }, 'seeded default roles')
+  }
+
+  // El cierre de caja requiere autorización presencial de gerente/admin. Se
+  // corrigen también instalaciones existentes donde el rol cajero la heredó.
+  const cashierRole = await db.select().from(roles).where(eq(roles.name, 'cashier')).get()
+  if (cashierRole?.permissions.includes(PERMISSIONS.CASH_CLOSE)) {
+    await db
+      .update(roles)
+      .set({
+        permissions: cashierRole.permissions.filter(
+          (permission) => permission !== PERMISSIONS.CASH_CLOSE
+        ),
+        updatedAt: now
+      })
+      .where(eq(roles.id, cashierRole.id))
+      .run()
   }
 
   const userCount = await db.$count(users)

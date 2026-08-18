@@ -28,7 +28,8 @@ export function useCashReport(
       if (!res.ok) throw new Error(res.error.code)
       return res.data
     },
-    enabled: !!cashSessionId && !!sessionId
+    enabled: !!cashSessionId && !!sessionId,
+    refetchInterval: 15_000
   })
 }
 
@@ -118,7 +119,15 @@ export function useAddMovement(): ReturnType<
 }
 
 export function useCloseCash(): ReturnType<
-  typeof useMutation<CashReportDTO, Error, { cashSessionId: string; declaredClosing: number }>
+  typeof useMutation<
+    CashReportDTO,
+    Error,
+    {
+      cashSessionId: string
+      declaredClosing: number
+      authorization?: { username: string; password: string } | null
+    }
+  >
 > {
   const qc = useQueryClient()
   const sessionId = useAuth((s) => s.session?.id ?? '')
@@ -127,7 +136,8 @@ export function useCloseCash(): ReturnType<
       const res = await api.cash.close({
         sessionId,
         cashSessionId: input.cashSessionId,
-        declaredClosing: input.declaredClosing
+        declaredClosing: input.declaredClosing,
+        authorization: input.authorization ?? null
       })
       if (!res.ok) throw new Error(res.error.code)
       return res.data

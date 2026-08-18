@@ -15,6 +15,9 @@ const cashReport = z.object({
   openingAmount: z.number(),
   salesCount: z.number(),
   salesGross: z.number(),
+  refundCount: z.number(),
+  refundTotal: z.number(),
+  netSales: z.number(),
   taxTotal: z.number(),
   igtfTotal: z.number(),
   byMethod: methodTotals,
@@ -98,10 +101,26 @@ export const cashContract = {
     input: z.object({
       sessionId: z.string(),
       cashSessionId: z.string(),
-      declaredClosing: z.number().int().nonnegative()
+      declaredClosing: z.number().int().nonnegative(),
+      authorization: z
+        .object({
+          username: z.string().trim().min(1),
+          password: z.string().min(1)
+        })
+        .nullable()
+        .optional()
     }),
     output: cashReport,
-    errors: ['NOT_AUTHENTICATED', 'FORBIDDEN', 'NOT_FOUND', 'SESSION_CLOSED'] as const
+    errors: [
+      'NOT_AUTHENTICATED',
+      'FORBIDDEN',
+      'APPROVAL_REQUIRED',
+      'INVALID_APPROVER',
+      'APPROVER_INACTIVE',
+      'RATE_LIMITED',
+      'NOT_FOUND',
+      'SESSION_CLOSED'
+    ] as const
   }
 } as const
 

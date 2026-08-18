@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { contracts } from '@shared/ipc/contracts'
+import { DEFAULT_ROLES, PERMISSIONS } from '@shared/auth/permissions'
 
 describe('contracts registry', () => {
   it('every contract has kind + channel', () => {
@@ -89,5 +90,21 @@ describe('contracts registry', () => {
     })
 
     expect(out.success).toBe(false)
+  })
+
+  it('cash.close accepts a complete supervisor authorization', () => {
+    const out = contracts.cash.close.input.safeParse({
+      sessionId: 'session-1',
+      cashSessionId: 'cash-1',
+      declaredClosing: 1000,
+      authorization: { username: 'manager', password: 'secret' }
+    })
+    expect(out.success).toBe(true)
+  })
+
+  it('cashier cannot close cash without supervisor authorization', () => {
+    expect(DEFAULT_ROLES.cashier.permissions).not.toContain(PERMISSIONS.CASH_CLOSE)
+    expect(DEFAULT_ROLES.manager.permissions).toContain(PERMISSIONS.CASH_CLOSE)
+    expect(DEFAULT_ROLES.admin.permissions).toContain(PERMISSIONS.CASH_CLOSE)
   })
 })

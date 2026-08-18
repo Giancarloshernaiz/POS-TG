@@ -19,7 +19,7 @@ import {
   fetchSellers,
   fetchTasa,
   fetchDescuentoDivisa,
-  fetchReturnedSaleIds,
+  fetchCompletedReturns,
   type AgroCategory
 } from './agro.client'
 
@@ -49,7 +49,7 @@ function parseCedula(raw: string): { docType: DocType | null; docId: string } {
 
 export async function pullAll(baseUrl: string, storeId: number, ts: number): Promise<PullSummary> {
   // 1) Fetch todo primero (async), luego escribir en una transacción sync.
-  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp, returnedSaleIds] =
+  const [agroCats, agroProds, agroClients, agroSellers, tasa, descuentoUsdBp, completedReturns] =
     await Promise.all([
       fetchCategories(baseUrl),
       fetchProductsSummary(baseUrl),
@@ -57,7 +57,7 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
       fetchSellers(baseUrl, storeId),
       fetchTasa(baseUrl),
       fetchDescuentoDivisa(baseUrl).catch(() => null),
-      fetchReturnedSaleIds(baseUrl).catch(() => null)
+      fetchCompletedReturns(baseUrl).catch(() => null)
     ])
 
   const db = getDb()
@@ -288,14 +288,19 @@ export async function pullAll(baseUrl: string, storeId: number, ts: number): Pro
   if (descuentoUsdBp !== null) {
     await setSetting(SETTINGS_KEYS.DISCOUNT_USD, { rateBp: descuentoUsdBp, fetchedAt: ts })
   }
-  if (returnedSaleIds !== null) {
-    const returned = new Set(returnedSaleIds)
+  if (completedReturns !== null) {
+    const returned = new Map(completedReturns.map((item) => [item.saleId, item]))
     const mappings = await db.select().from(syncState).all()
     for (const mapping of mappings) {
-      if (mapping.agroSaleId && returned.has(mapping.agroSaleId)) {
+      const completed = mapping.agroSaleId ? returned.get(mapping.agroSaleId) : undefined
+      if (completed) {
         await db
           .update(sales)
-          .set({ returnStatus: 'approved' })
+          .set({
+            returnStatus: 'approved',
+            returnAmount: completed.amountCents,
+            returnedAt: completed.completedAt ?? ts
+          })
           .where(eq(sales.id, mapping.saleId))
           .run()
       }

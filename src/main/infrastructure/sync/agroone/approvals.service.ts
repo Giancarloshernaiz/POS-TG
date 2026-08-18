@@ -88,10 +88,7 @@ async function crear(
 ): Promise<AuthorizationRequestDTO> {
   const baseUrl = await requireBaseUrl()
   if (approverIds.length === 0) {
-    throw new ApprovalError(
-      'NO_APPROVERS',
-      'Elegí a quién le pedís la autorización'
-    )
+    throw new ApprovalError('NO_APPROVERS', 'Elegí a quién le pedís la autorización')
   }
   const { agroSaleId, number } = await requireSyncedSale(saleId)
   const identity = await getIdentity()
@@ -115,7 +112,10 @@ async function crear(
     return req
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new ApprovalError('AGRO_UNREACHABLE', `No se pudo enviar la solicitud a Galas Cloud: ${msg}`)
+    throw new ApprovalError(
+      'AGRO_UNREACHABLE',
+      `No se pudo enviar la solicitud a Galas Cloud: ${msg}`
+    )
   }
 }
 
@@ -144,7 +144,10 @@ export async function requestReturn(
   const db = getDb()
   const localSale = await db.select().from(sales).where(eq(sales.id, saleId)).get()
   if (localSale?.returnStatus === 'pending') {
-    throw new ApprovalError('RETURN_ALREADY_REQUESTED', 'Esta venta ya tiene una devolución pendiente')
+    throw new ApprovalError(
+      'RETURN_ALREADY_REQUESTED',
+      'Esta venta ya tiene una devolución pendiente'
+    )
   }
   if (localSale?.returnStatus === 'approved') {
     throw new ApprovalError('RETURN_ALREADY_COMPLETED', 'Esta venta ya fue devuelta')
@@ -179,24 +182,24 @@ export async function requestReturn(
     clienteAgroId = cust?.agroId ?? undefined
   }
 
+  const lineTotal = items.reduce((sum, item) => {
+    const line = porProducto.get(item.productId)
+    return sum + (line ? (line.lineTotal / line.qty) * item.qty : 0)
+  }, 0)
+  const returnAmount = sale
+    ? paidShareForReturnCents(lineTotal, sale.subtotal, sale.total)
+    : Math.round(lineTotal)
+
   try {
     const request = await crear('RETURN_SALE', saleId, cajero, approverIds, {
       items: mapeados,
       ...(clienteAgroId ? { cliente_id: clienteAgroId } : {}),
       // El administrador lo ve en su bandeja antes de aprobar.
-      totalDevolucion: (() => {
-        const lineTotal = items.reduce((sum, i) => {
-          const l = porProducto.get(i.productId)
-          return sum + (l ? (l.lineTotal / l.qty) * i.qty : 0)
-        }, 0)
-        return sale
-          ? paidShareForReturnCents(lineTotal, sale.subtotal, sale.total) / 100
-          : lineTotal / 100
-      })()
+      totalDevolucion: returnAmount / 100
     })
     await db
       .update(sales)
-      .set({ returnStatus: 'pending', returnRequestId: request.id })
+      .set({ returnStatus: 'pending', returnRequestId: request.id, returnAmount })
       .where(eq(sales.id, saleId))
       .run()
     return request
@@ -208,7 +211,10 @@ export async function requestReturn(
     }
     if (message.includes('RETURN_ALREADY_REQUESTED')) {
       await db.update(sales).set({ returnStatus: 'pending' }).where(eq(sales.id, saleId)).run()
-      throw new ApprovalError('RETURN_ALREADY_REQUESTED', 'Esta venta ya tiene una devolución pendiente')
+      throw new ApprovalError(
+        'RETURN_ALREADY_REQUESTED',
+        'Esta venta ya tiene una devolución pendiente'
+      )
     }
     throw error
   }
@@ -236,7 +242,10 @@ export async function getApprovalStatus(requestId: number): Promise<Authorizatio
                 : request.status === 'REJECTED'
                   ? 'rejected'
                   : 'pending',
-            returnRequestId: request.id
+            returnRequestId: request.id,
+            ...(request.status === 'APPROVED'
+              ? { returnedAt: request.approvedAt ?? Date.now() }
+              : {})
           })
           .where(eq(sales.id, synced.saleId))
           .run()

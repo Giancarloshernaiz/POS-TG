@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, ArrowDownToLine, Lock } from 'lucide-react'
+import { Loader2, ArrowDownToLine, Lock, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Card,
@@ -52,7 +52,10 @@ export function CashScreen(): React.JSX.Element {
 
 function OpenSessionView({ cashSessionId }: { cashSessionId: string }): React.JSX.Element {
   const { data: report } = useCashReport(cashSessionId)
-  const canClose = useAuth((s) => s.hasPermission('cash.close'))
+  const roleName = useAuth((s) => s.session?.roleName ?? '')
+  const hasClosePermission = useAuth((s) => s.hasPermission('cash.close'))
+  const canCloseWithoutApproval =
+    (roleName === 'admin' || roleName === 'manager') && hasClosePermission
   const [movementOpen, setMovementOpen] = useState<'deposit' | 'withdrawal' | null>(null)
   const [closeOpen, setCloseOpen] = useState(false)
 
@@ -72,12 +75,10 @@ function OpenSessionView({ cashSessionId }: { cashSessionId: string }): React.JS
             <ArrowDownToLine className="h-4 w-4" />
             Ingreso
           </Button>
-          {canClose && (
-            <Button onClick={() => setCloseOpen(true)}>
-              <Lock className="h-4 w-4" />
-              Cerrar caja
-            </Button>
-          )}
+          <Button onClick={() => setCloseOpen(true)}>
+            <Lock className="h-4 w-4" />
+            {canCloseWithoutApproval ? 'Cerrar caja' : 'Solicitar cierre'}
+          </Button>
         </div>
       </div>
 
@@ -94,6 +95,7 @@ function OpenSessionView({ cashSessionId }: { cashSessionId: string }): React.JS
           onClose={() => setCloseOpen(false)}
           cashSessionId={cashSessionId}
           report={report}
+          requiresApproval={!canCloseWithoutApproval}
         />
       )}
     </div>
@@ -111,6 +113,12 @@ function ReportView({ report }: { report: CashReportDTO }): React.JSX.Element {
         <CardContent className="space-y-2 text-sm">
           <Row label="Ventas" value={String(report.salesCount)} />
           <Row label="Bruto" money={report.salesGross} />
+          {report.refundCount > 0 && (
+            <>
+              <Row label={`Devoluciones (${report.refundCount})`} money={report.refundTotal} />
+              <Row label="Venta neta" money={report.netSales} />
+            </>
+          )}
           <Row label="Monto inicial" money={report.openingAmount} />
         </CardContent>
       </Card>
@@ -256,40 +264,71 @@ function CloseDialog({
   open,
   onClose,
   cashSessionId,
-  report
+  report,
+  requiresApproval
 }: {
   open: boolean
   onClose: () => void
   cashSessionId: string
   report: CashReportDTO
+  requiresApproval: boolean
 }): React.JSX.Element {
   const mut = useCloseCash()
   const [declaredCents, setDeclaredCents] = useState(0)
   const [touched, setTouched] = useState(false)
+  const [approverUsername, setApproverUsername] = useState('')
+  const [approverPassword, setApproverPassword] = useState('')
 
   const diff = declaredCents - report.expectedCashUsd
+
+  function closeDialog(): void {
+    setDeclaredCents(0)
+    setTouched(false)
+    setApproverUsername('')
+    setApproverPassword('')
+    onClose()
+  }
 
   async function submit(): Promise<void> {
     if (declaredCents < 0) {
       toast.error('Monto inválido')
       return
     }
+    if (requiresApproval && (!approverUsername.trim() || !approverPassword)) {
+      toast.error('Ingresa las credenciales del gerente o administrador')
+      return
+    }
     try {
-      const r = await mut.mutateAsync({ cashSessionId, declaredClosing: declaredCents })
+      const r = await mut.mutateAsync({
+        cashSessionId,
+        declaredClosing: declaredCents,
+        authorization: requiresApproval
+          ? { username: approverUsername.trim(), password: approverPassword }
+          : null
+      })
       const os = r.overShort ?? 0
       toast.success(
         os === 0
           ? 'Caja cerrada — cuadrada'
           : `Caja cerrada — ${os > 0 ? 'sobrante' : 'faltante'} ${formatMoney(Math.abs(os))}`
       )
-      onClose()
+      closeDialog()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e))
+      const code = e instanceof Error ? e.message : String(e)
+      const messages: Record<string, string> = {
+        APPROVAL_REQUIRED: 'El cierre requiere autorización de gerente o administrador',
+        INVALID_APPROVER:
+          'Las credenciales no corresponden a un gerente o administrador autorizado',
+        APPROVER_INACTIVE: 'El usuario autorizante está inactivo',
+        RATE_LIMITED: 'Demasiados intentos. Espera un minuto antes de volver a intentar',
+        SESSION_CLOSED: 'La caja ya fue cerrada'
+      }
+      toast.error(messages[code] ?? code)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && closeDialog()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Cerrar caja (arqueo)</DialogTitle>
@@ -302,6 +341,22 @@ function CloseDialog({
             <span className="text-muted-foreground">Efectivo esperado</span>
             <span className="font-mono font-semibold">{formatMoney(report.expectedCashUsd)}</span>
           </div>
+          {report.refundCount > 0 && (
+            <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+              <div className="flex justify-between">
+                <span>Devoluciones aprobadas ({report.refundCount})</span>
+                <span className="font-mono font-semibold">-{formatMoney(report.refundTotal)}</span>
+              </div>
+              <div className="mt-1 flex justify-between text-xs text-orange-700">
+                <span>Venta neta del período</span>
+                <span className="font-mono">{formatMoney(report.netSales)}</span>
+              </div>
+              <p className="mt-2 text-xs text-orange-700">
+                Se informa en el cierre, pero no reduce el efectivo esperado porque genera crédito
+                al cliente.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="declared">Efectivo contado</Label>
             <MoneyInput
@@ -329,14 +384,54 @@ function CloseDialog({
               <span className="font-mono font-semibold">{formatMoney(Math.abs(diff))}</span>
             </div>
           )}
+          {requiresApproval && (
+            <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-2 text-amber-900">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">Autorización requerida</p>
+                  <p className="text-xs text-amber-700">
+                    Un gerente o administrador debe autorizar este cierre con sus credenciales.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="closeApprover">Usuario autorizante</Label>
+                <Input
+                  id="closeApprover"
+                  value={approverUsername}
+                  onChange={(event) => setApproverUsername(event.target.value)}
+                  autoComplete="username"
+                  placeholder="Usuario de gerente o administrador"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="closeApproverPassword">Contraseña</Label>
+                <Input
+                  id="closeApproverPassword"
+                  type="password"
+                  value={approverPassword}
+                  onChange={(event) => setApproverPassword(event.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={closeDialog}>
             Cancelar
           </Button>
-          <Button onClick={() => void submit()} disabled={mut.isPending || !touched}>
+          <Button
+            onClick={() => void submit()}
+            disabled={
+              mut.isPending ||
+              !touched ||
+              (requiresApproval && (!approverUsername.trim() || !approverPassword))
+            }
+          >
             {mut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Cerrar caja
+            {requiresApproval ? 'Autorizar y cerrar caja' : 'Cerrar caja'}
           </Button>
         </DialogFooter>
       </DialogContent>

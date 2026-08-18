@@ -33,6 +33,8 @@ export const sales = sqliteTable(
     notes: text('notes'),
     returnStatus: text('return_status', { enum: ['pending', 'approved', 'rejected'] }),
     returnRequestId: integer('return_request_id'),
+    returnAmount: integer('return_amount').notNull().default(0),
+    returnedAt: integer('returned_at'),
     createdAt: integer('created_at').notNull(),
     voidedAt: integer('voided_at'),
     voidedBy: text('voided_by').references(() => users.id)
@@ -43,6 +45,7 @@ export const sales = sqliteTable(
     index('sales_customer_idx').on(t.customerId),
     index('sales_created_idx').on(t.createdAt),
     index('sales_status_idx').on(t.status),
+    index('sales_returned_at_idx').on(t.returnedAt),
     index('sales_seller_idx').on(t.sellerId)
   ]
 )

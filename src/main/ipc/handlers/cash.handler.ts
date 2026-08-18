@@ -1,6 +1,7 @@
 import type { z } from 'zod'
+import { eq } from 'drizzle-orm'
 import { getDb } from '@main/infrastructure/db/client'
-import { cashSessions } from '@main/infrastructure/db/schema'
+import { cashSessions, roles, users } from '@main/infrastructure/db/schema'
 import { requireSession, requirePermission } from '@main/auth/guard'
 import {
   openSession,
@@ -11,11 +12,39 @@ import {
   getActiveSession
 } from '@main/domain/cash/cash.service'
 import { audit } from '@main/audit/logger'
-import { PERMISSIONS } from '@shared/auth/permissions'
+import { PERMISSIONS, type Permission } from '@shared/auth/permissions'
+import { verifyPassword } from '@main/auth/password'
 import { cashContract } from '@shared/ipc/contracts/cash'
 import type { CashReportDTO, CashSessionRowDTO } from '@shared/ipc/contracts/cash'
 
 type Input<K extends keyof typeof cashContract> = z.infer<(typeof cashContract)[K]['input']>
+
+class CashAuthorizationError extends Error {
+  constructor(
+    public code: string,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+const authorizationAttempts = new Map<string, { count: number; firstAt: number }>()
+const AUTHORIZATION_WINDOW_MS = 60_000
+const MAX_AUTHORIZATION_ATTEMPTS = 5
+
+function registerAuthorizationAttempt(username: string): void {
+  const key = username.trim().toLowerCase()
+  const now = Date.now()
+  const current = authorizationAttempts.get(key)
+  if (!current || now - current.firstAt > AUTHORIZATION_WINDOW_MS) {
+    authorizationAttempts.set(key, { count: 1, firstAt: now })
+    return
+  }
+  current.count++
+  if (current.count > MAX_AUTHORIZATION_ATTEMPTS) {
+    throw new CashAuthorizationError('RATE_LIMITED', 'demasiados intentos de autorización')
+  }
+}
 
 function toSessionRow(row: typeof cashSessions.$inferSelect): CashSessionRowDTO {
   return {
@@ -93,8 +122,73 @@ export const cashHandlers = {
   },
 
   async close(input: Input<'close'>): Promise<CashReportDTO> {
-    const session = requirePermission(input.sessionId, PERMISSIONS.CASH_CLOSE)
+    const session = requireSession(input.sessionId)
     const db = getDb()
+    const cashSession = await db
+      .select()
+      .from(cashSessions)
+      .where(eq(cashSessions.id, input.cashSessionId))
+      .get()
+    if (!cashSession) throw new CashAuthorizationError('NOT_FOUND', 'sesión de caja no existe')
+    if (cashSession.userId !== session.userId) {
+      throw new CashAuthorizationError('FORBIDDEN', 'solo puedes cerrar tu propia caja')
+    }
+
+    const canAuthorizeSelf =
+      (session.roleName === 'admin' || session.roleName === 'manager') &&
+      session.permissions.includes(PERMISSIONS.CASH_CLOSE)
+    let authorizedBy = session
+
+    if (!canAuthorizeSelf) {
+      const credentials = input.authorization
+      if (!credentials) {
+        throw new CashAuthorizationError(
+          'APPROVAL_REQUIRED',
+          'el cierre requiere autorización de gerente o administrador'
+        )
+      }
+      registerAuthorizationAttempt(credentials.username)
+      const approver = await db
+        .select({ user: users, role: roles })
+        .from(users)
+        .innerJoin(roles, eq(users.roleId, roles.id))
+        .where(eq(users.username, credentials.username))
+        .get()
+      if (!approver || !(await verifyPassword(credentials.password, approver.user.passwordHash))) {
+        throw new CashAuthorizationError(
+          'INVALID_APPROVER',
+          'credenciales de autorizante inválidas'
+        )
+      }
+      if (!approver.user.active) {
+        throw new CashAuthorizationError(
+          'APPROVER_INACTIVE',
+          'el usuario autorizante está inactivo'
+        )
+      }
+      const approverPermissions = approver.role.permissions as Permission[]
+      if (
+        !['admin', 'manager'].includes(approver.role.name) ||
+        !approverPermissions.includes(PERMISSIONS.CASH_CLOSE) ||
+        approver.user.mustChangePassword
+      ) {
+        throw new CashAuthorizationError(
+          'INVALID_APPROVER',
+          'el usuario no puede autorizar cierres de caja'
+        )
+      }
+      authorizationAttempts.delete(credentials.username.trim().toLowerCase())
+      authorizedBy = {
+        ...session,
+        userId: approver.user.id,
+        username: approver.user.username,
+        fullName: approver.user.fullName,
+        roleId: approver.role.id,
+        roleName: approver.role.name,
+        permissions: approverPermissions
+      }
+    }
+
     const report = await closeSession(db, input.cashSessionId, input.declaredClosing)
     await audit({
       userId: session.userId,
@@ -104,7 +198,10 @@ export const cashHandlers = {
       after: {
         declaredClosing: input.declaredClosing,
         expected: report.expectedCashUsd,
-        overShort: report.overShort
+        overShort: report.overShort,
+        authorizedByUserId: authorizedBy.userId,
+        authorizedByName: authorizedBy.fullName,
+        authorizedByRole: authorizedBy.roleName
       }
     })
     return report

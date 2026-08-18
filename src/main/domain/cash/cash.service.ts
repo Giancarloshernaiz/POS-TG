@@ -26,6 +26,9 @@ export type CashReport = {
   openingAmount: number
   salesCount: number
   salesGross: number // sum of sale totals
+  refundCount: number
+  refundTotal: number
+  netSales: number
   taxTotal: number
   igtfTotal: number
   byMethod: PaymentMethodTotals
@@ -127,6 +130,25 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
     .where(and(eq(sales.cashSessionId, sessionId), eq(sales.status, 'completed')))
     .get()
 
+  // Las devoluciones pertenecen al cierre en el que fueron aprobadas, aunque
+  // la venta original sea de una caja anterior. Son crédito al cliente, por lo
+  // que informan venta neta pero no alteran el efectivo físico esperado.
+  const reportEnd = session.s.closedAt ?? Date.now()
+  const refundAgg = await db
+    .select({
+      count: sql<number>`COUNT(*)`,
+      total: sql<number>`COALESCE(SUM(${sales.returnAmount}), 0)`
+    })
+    .from(sales)
+    .where(
+      and(
+        eq(sales.returnStatus, 'approved'),
+        gte(sales.returnedAt, session.s.openedAt),
+        lte(sales.returnedAt, reportEnd)
+      )
+    )
+    .get()
+
   // Payment breakdown by method.
   const payRows = await db
     .select({
@@ -165,6 +187,7 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
 
   const cashUsd = byMethod['cash_usd']?.amountUsd ?? 0
   const expectedCashUsd = session.s.openingAmount + cashUsd + movementsIn - movementsOut
+  const refundTotal = refundAgg?.total ?? 0
 
   return {
     sessionId: session.s.id,
@@ -176,6 +199,9 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
     openingAmount: session.s.openingAmount,
     salesCount: saleAgg?.count ?? 0,
     salesGross: saleAgg?.gross ?? 0,
+    refundCount: refundAgg?.count ?? 0,
+    refundTotal,
+    netSales: (saleAgg?.gross ?? 0) - refundTotal,
     taxTotal: saleAgg?.tax ?? 0,
     igtfTotal: saleAgg?.igtf ?? 0,
     byMethod,

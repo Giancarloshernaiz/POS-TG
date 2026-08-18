@@ -67,6 +67,8 @@ export function CashHistoryScreen(): React.JSX.Element {
     const items = data?.items ?? []
     return {
       sales: items.reduce((sum, report) => sum + report.salesGross, 0),
+      refunds: items.reduce((sum, report) => sum + report.refundTotal, 0),
+      netSales: items.reduce((sum, report) => sum + report.netSales, 0),
       shortages: items.reduce((sum, report) => sum + Math.max(0, -(report.overShort ?? 0)), 0),
       surpluses: items.reduce((sum, report) => sum + Math.max(0, report.overShort ?? 0), 0)
     }
@@ -99,9 +101,11 @@ export function CashHistoryScreen(): React.JSX.Element {
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <SummaryCard title="Cajas cerradas" value={String(data?.total ?? 0)} />
         <SummaryCard title="Ventas registradas" value={formatMoney(summary.sales)} />
+        <SummaryCard title="Devoluciones" value={formatMoney(summary.refunds)} tone="danger" />
+        <SummaryCard title="Venta neta" value={formatMoney(summary.netSales)} tone="success" />
         <SummaryCard title="Faltantes" value={formatMoney(summary.shortages)} tone="danger" />
         <SummaryCard title="Sobrantes" value={formatMoney(summary.surpluses)} tone="success" />
       </div>
@@ -156,7 +160,7 @@ export function CashHistoryScreen(): React.JSX.Element {
               <TableHead>Cierre</TableHead>
               <TableHead>Cajero</TableHead>
               <TableHead>Duración</TableHead>
-              <TableHead className="text-right">Ventas</TableHead>
+              <TableHead className="text-right">Ventas / devoluciones</TableHead>
               <TableHead className="text-right">Esperado</TableHead>
               <TableHead className="text-right">Contado</TableHead>
               <TableHead>Resultado</TableHead>
@@ -205,6 +209,11 @@ export function CashHistoryScreen(): React.JSX.Element {
                 <TableCell className="text-right">
                   <div className="font-mono font-medium">{formatMoney(report.salesGross)}</div>
                   <div className="text-xs text-muted-foreground">{report.salesCount} ventas</div>
+                  {report.refundCount > 0 && (
+                    <div className="text-xs text-orange-700">
+                      -{formatMoney(report.refundTotal)} · {report.refundCount} dev.
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-right font-mono">
                   {formatMoney(report.expectedCashUsd)}
@@ -304,11 +313,17 @@ function CashReportDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           <DetailCard
             label="Ventas"
             value={`${report.salesCount} · ${formatMoney(report.salesGross)}`}
           />
+          {report.refundCount > 0 && (
+            <DetailCard
+              label="Devoluciones"
+              value={`${report.refundCount} · -${formatMoney(report.refundTotal)}`}
+            />
+          )}
           <DetailCard label="Efectivo esperado" value={formatMoney(report.expectedCashUsd)} />
           <div className="rounded-lg border p-3">
             <div className="mb-2 text-xs text-muted-foreground">Resultado</div>
@@ -346,6 +361,12 @@ function CashReportDialog({
               <DetailRow label="Monto inicial" value={formatMoney(report.openingAmount)} />
               <DetailRow label="Ingresos" value={formatMoney(report.movementsIn)} />
               <DetailRow label="Retiros" value={formatMoney(report.movementsOut)} />
+              {report.refundCount > 0 && (
+                <>
+                  <DetailRow label="Devoluciones" value={`-${formatMoney(report.refundTotal)}`} />
+                  <DetailRow label="Venta neta" value={formatMoney(report.netSales)} strong />
+                </>
+              )}
               <DetailRow label="Esperado" value={formatMoney(report.expectedCashUsd)} strong />
               <DetailRow label="Contado" value={formatMoney(report.closingAmount ?? 0)} strong />
             </CardContent>

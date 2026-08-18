@@ -251,13 +251,34 @@ export async function fetchDescuentoDivisa(baseUrl: string): Promise<number> {
   return Math.max(0, Math.round(num(raw) * 100))
 }
 
-/** Ventas del maestro que ya tienen una devolución completada. */
-export async function fetchReturnedSaleIds(baseUrl: string): Promise<number[]> {
-  const data = await get<{ saleIds?: unknown[] }>(
-    baseUrl,
-    '/api/v1/sales/returns/completed-sale-ids'
-  )
-  return (data.saleIds ?? []).map((id) => Math.round(num(id))).filter((id) => id > 0)
+export type AgroCompletedReturn = {
+  saleId: number
+  amountCents: number
+  completedAt: number | null
+}
+
+/** Ventas del maestro con monto exacto y fecha de devolución completada. */
+export async function fetchCompletedReturns(baseUrl: string): Promise<AgroCompletedReturn[]> {
+  const data = await get<{
+    saleIds?: unknown[]
+    returns?: Array<{ saleId?: unknown; amount?: unknown; completedAt?: unknown }>
+  }>(baseUrl, '/api/v1/sales/returns/completed-sale-ids')
+  if (Array.isArray(data.returns)) {
+    return data.returns
+      .map((item) => ({
+        saleId: Math.round(num(item.saleId)),
+        amountCents: Math.max(0, Math.round(num(item.amount) * 100)),
+        completedAt:
+          typeof item.completedAt === 'number' && Number.isFinite(item.completedAt)
+            ? item.completedAt
+            : null
+      }))
+      .filter((item) => item.saleId > 0)
+  }
+  // Compatibilidad durante el despliegue del backend maestro actualizado.
+  return (data.saleIds ?? [])
+    .map((id) => ({ saleId: Math.round(num(id)), amountCents: 0, completedAt: null }))
+    .filter((item) => item.saleId > 0)
 }
 
 /** GET /sales/clients/ — con `cedula` filtra exacto (case-insensitive) server-side. */
