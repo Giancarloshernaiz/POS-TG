@@ -41,7 +41,7 @@ export function SaleDraftsDialog({
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-5">
           <DialogTitle className="flex items-center gap-2">
-            <Clock3 className="h-5 w-5" /> Ventas en espera
+            <Clock3 className="h-5 w-5" /> Facturas en espera
           </DialogTitle>
           <DialogDescription>
             Retoma una venta con sus productos, cliente, vendedor y pagos tal como se dejó.
@@ -56,8 +56,8 @@ export function SaleDraftsDialog({
           ) : drafts.length === 0 ? (
             <div className="flex flex-col items-center py-14 text-center text-muted-foreground">
               <ShoppingCart className="mb-3 h-10 w-10 opacity-40" />
-              <p className="font-medium text-foreground">No hay ventas en espera</p>
-              <p className="mt-1 text-sm">Las ventas que pauses aparecerán aquí.</p>
+              <p className="font-medium text-foreground">No hay facturas en espera</p>
+              <p className="mt-1 text-sm">Las facturas que guardes aparecerán aquí.</p>
             </div>
           ) : (
             drafts.map((draft) => {

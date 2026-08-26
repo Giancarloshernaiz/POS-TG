@@ -514,7 +514,7 @@ function POSContent(): React.JSX.Element {
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setDraftsOpen(true)}>
             <Clock3 className="mr-2 h-4 w-4" />
-            En espera
+            Facturas en espera
             {saleDrafts.length > 0 && (
               <Badge className="ml-2 px-1.5" variant="secondary">
                 {saleDrafts.length}
@@ -532,7 +532,7 @@ function POSContent(): React.JSX.Element {
             ) : (
               <PauseCircle className="mr-2 h-4 w-4" />
             )}
-            {activeDraftId ? 'Actualizar espera' : 'Guardar en espera'}
+            {activeDraftId ? 'Actualizar factura' : 'Guardar factura'}
           </Button>
         </div>
       </div>
