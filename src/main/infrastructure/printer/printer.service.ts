@@ -194,7 +194,7 @@ export async function printSaleTicket(
   if (sale.usdDiscountTotal > 0) {
     const rateLabel =
       sale.usdDiscountRateBp > 0 ? ` (${(sale.usdDiscountRateBp / 100).toFixed(2)}%)` : ''
-    printer.leftRight(`Descuento pago USD${rateLabel}`, `-${usd(sale.usdDiscountTotal)}`)
+    printer.leftRight(`Descuento pago REF${rateLabel}`, `-${usd(sale.usdDiscountTotal)}`)
   }
   if (sale.fidelityApplied > 0) {
     printer.leftRight('Fidelizacion', `-${usd(sale.fidelityApplied)}`)
