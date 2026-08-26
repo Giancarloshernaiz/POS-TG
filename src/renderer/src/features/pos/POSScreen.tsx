@@ -826,29 +826,26 @@ function POSContent(): React.JSX.Element {
               )}
             </div>
             <div className="space-y-1 text-sm">
-              <TotalRow label="Subtotal productos" cents={grossSubtotal} rate={rate} />
+              <TotalRow label="Subtotal productos" cents={grossSubtotal} />
               {productDiscount > 0 && (
-                <TotalRow label="Descuento productos" cents={-productDiscount} rate={rate} />
+                <TotalRow label="Descuento productos" cents={-productDiscount} />
               )}
               {usdDiscount > 0 && (
                 <TotalRow
                   label={`Descuento pago en referencia (${(discountUsdRateBp / 100).toFixed(2)}%)`}
                   cents={-usdDiscount}
-                  rate={rate}
                 />
               )}
               {benefits.fidelityAppliedCents > 0 && (
                 <TotalRow
                   label={`Fidelización (Ref. ${formatReference(FIDELITY_REWARD_CENTS)})`}
                   cents={-benefits.fidelityAppliedCents}
-                  rate={rate}
                 />
               )}
               {benefits.creditAppliedCents > 0 && (
                 <TotalRow
                   label="Crédito a favor"
                   cents={-benefits.creditAppliedCents}
-                  rate={rate}
                 />
               )}
               <div className="flex items-end justify-between border-t pt-3">
@@ -1073,24 +1070,15 @@ function CartRow({ line }: { line: CartLine }): React.JSX.Element {
 
 function TotalRow({
   label,
-  cents,
-  rate
+  cents
 }: {
   label: string
   cents: number
-  rate: number | null
 }): React.JSX.Element {
   return (
-    <div className="flex justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-mono">
-        Ref. {formatReference(cents)}
-        {rate && (
-          <span className="ml-2 text-xs text-muted-foreground">
-            Bs {formatBolivares(cents, rate)}
-          </span>
-        )}
-      </span>
+    <div className="flex items-center justify-between gap-4">
+      <span className="min-w-0 flex-1 text-muted-foreground">{label}</span>
+      <span className="w-40 shrink-0 text-right font-mono">Ref. {formatReference(cents)}</span>
     </div>
   )
 }
