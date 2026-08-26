@@ -12,7 +12,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Label } from '@renderer/components/ui/label'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { useOpenCash } from './hooks'
-import { MoneyInput } from '@renderer/components/MoneyInput'
+import { CashAmountsInput } from './CashAmountsInput'
 
 type Props = {
   /** Optional copy tweak when shown from the POS screen. */
@@ -22,6 +22,7 @@ type Props = {
 export function OpenCashForm({ context = 'cash' }: Props): React.JSX.Element {
   const openMut = useOpenCash()
   const [amountCents, setAmountCents] = useState(0)
+  const [amountVes, setAmountVes] = useState(0)
   const [notes, setNotes] = useState('')
 
   async function submit(): Promise<void> {
@@ -30,7 +31,11 @@ export function OpenCashForm({ context = 'cash' }: Props): React.JSX.Element {
       return
     }
     try {
-      await openMut.mutateAsync({ openingAmount: amountCents, notes: notes || null })
+      await openMut.mutateAsync({
+        openingAmount: amountCents,
+        openingVes: amountVes,
+        notes: notes || null
+      })
       toast.success('Caja abierta — ya puedes vender')
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -61,15 +66,17 @@ export function OpenCashForm({ context = 'cash' }: Props): React.JSX.Element {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="opening">Monto inicial en caja</Label>
-            <MoneyInput
-              id="opening"
-              valueCents={amountCents}
-              onChangeCents={setAmountCents}
+            <CashAmountsInput
+              idPrefix="opening"
+              usdCents={amountCents}
+              vesAmount={amountVes}
+              onUsdCents={setAmountCents}
+              onVesAmount={setAmountVes}
               autoFocus
             />
             <p className="text-xs text-muted-foreground">
-              Efectivo con el que abre la caja (fondo de cambio). Puedes ingresarlo en $ o en Bs.
-              Puede ser 0.
+              Declara por separado el efectivo real en referencia y en bolívares. Ambos pueden ser
+              0.
             </p>
           </div>
           <div className="space-y-2">

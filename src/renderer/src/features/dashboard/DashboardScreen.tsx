@@ -7,7 +7,7 @@ import { useActiveSession, useCashReport } from '@renderer/features/cash/hooks'
 import { useStock } from '@renderer/features/inventory/hooks'
 import { useCustomers } from '@renderer/features/customers/hooks'
 import { useSales } from '@renderer/features/reports/hooks'
-import { formatMoney, formatRate } from '@renderer/lib/money'
+import { formatBsAmount, formatMoney, formatRate } from '@renderer/lib/money'
 
 function startOfToday(): number {
   const d = new Date()
@@ -58,7 +58,7 @@ export function DashboardScreen(): React.JSX.Element {
           value={active ? 'Abierta' : 'Cerrada'}
           sub={
             active && report
-              ? `Esperado: ${formatMoney(report.expectedCashUsd)}`
+              ? `Esperado: ${formatMoney(report.expectedCashUsd)} / ${formatBsAmount(report.expectedCashVes)}`
               : 'Sin turno activo'
           }
           tone={active ? 'success' : 'muted'}

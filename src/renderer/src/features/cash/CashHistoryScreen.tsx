@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow
 } from '@renderer/components/ui/table'
-import { formatMoney } from '@renderer/lib/money'
+import { formatBsAmount, formatMoney } from '@renderer/lib/money'
 import { PAYMENT_METHOD_LABEL } from '@renderer/lib/paymentMethods'
 import { useAuth } from '@renderer/stores/auth'
 import type { CashReportDTO } from '@shared/ipc/contracts/cash'
@@ -43,11 +43,32 @@ function duration(openedAt: number, closedAt: number | null): string {
   return hours > 0 ? `${hours}h ${rest}m` : `${rest}m`
 }
 
-function ResultBadge({ amount }: { amount: number | null }): React.JSX.Element {
-  const value = amount ?? 0
-  if (value === 0) return <Badge variant="success">Cuadrada</Badge>
-  if (value > 0) return <Badge variant="info">Sobrante {formatMoney(value)}</Badge>
-  return <Badge variant="destructive">Faltante {formatMoney(Math.abs(value))}</Badge>
+function formatMethodAmount(totals: CashReportDTO['byMethod'][string]): string {
+  if (totals.currency === 'VES') {
+    return `Bs ${(totals.amountOriginal ?? 0).toLocaleString('es-VE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`
+  }
+  return formatMoney(totals.amountUsd)
+}
+
+function ResultBadge({
+  amountUsd,
+  amountVes
+}: {
+  amountUsd: number | null
+  amountVes: number | null
+}): React.JSX.Element {
+  const usd = amountUsd ?? 0
+  const ves = amountVes ?? 0
+  if (usd === 0 && ves === 0) return <Badge variant="success">Cuadrada</Badge>
+  const hasShortage = usd < 0 || ves < 0
+  return (
+    <Badge variant={hasShortage ? 'destructive' : 'info'}>
+      {hasShortage ? 'Diferencia' : 'Sobrante'} {formatMoney(usd)} / {formatBsAmount(ves)}
+    </Badge>
+  )
 }
 
 export function CashHistoryScreen(): React.JSX.Element {
@@ -70,7 +91,15 @@ export function CashHistoryScreen(): React.JSX.Element {
       refunds: items.reduce((sum, report) => sum + report.refundTotal, 0),
       netSales: items.reduce((sum, report) => sum + report.netSales, 0),
       shortages: items.reduce((sum, report) => sum + Math.max(0, -(report.overShort ?? 0)), 0),
-      surpluses: items.reduce((sum, report) => sum + Math.max(0, report.overShort ?? 0), 0)
+      shortagesVes: items.reduce(
+        (sum, report) => sum + Math.max(0, -(report.overShortVes ?? 0)),
+        0
+      ),
+      surpluses: items.reduce((sum, report) => sum + Math.max(0, report.overShort ?? 0), 0),
+      surplusesVes: items.reduce(
+        (sum, report) => sum + Math.max(0, report.overShortVes ?? 0),
+        0
+      )
     }
   }, [data])
 
@@ -106,8 +135,16 @@ export function CashHistoryScreen(): React.JSX.Element {
         <SummaryCard title="Ventas registradas" value={formatMoney(summary.sales)} />
         <SummaryCard title="Devoluciones" value={formatMoney(summary.refunds)} tone="danger" />
         <SummaryCard title="Venta neta" value={formatMoney(summary.netSales)} tone="success" />
-        <SummaryCard title="Faltantes" value={formatMoney(summary.shortages)} tone="danger" />
-        <SummaryCard title="Sobrantes" value={formatMoney(summary.surpluses)} tone="success" />
+        <SummaryCard
+          title="Faltantes"
+          value={`${formatMoney(summary.shortages)} / ${formatBsAmount(summary.shortagesVes)}`}
+          tone="danger"
+        />
+        <SummaryCard
+          title="Sobrantes"
+          value={`${formatMoney(summary.surpluses)} / ${formatBsAmount(summary.surplusesVes)}`}
+          tone="success"
+        />
       </div>
 
       <Card>
@@ -216,13 +253,15 @@ export function CashHistoryScreen(): React.JSX.Element {
                   )}
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {formatMoney(report.expectedCashUsd)}
+                  <div>{formatMoney(report.expectedCashUsd)}</div>
+                  <div>{formatBsAmount(report.expectedCashVes)}</div>
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {formatMoney(report.closingAmount ?? 0)}
+                  <div>{formatMoney(report.closingAmount ?? 0)}</div>
+                  <div>{formatBsAmount(report.closingVes ?? 0)}</div>
                 </TableCell>
                 <TableCell>
-                  <ResultBadge amount={report.overShort} />
+                  <ResultBadge amountUsd={report.overShort} amountVes={report.overShortVes} />
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
@@ -324,10 +363,13 @@ function CashReportDialog({
               value={`${report.refundCount} · -${formatMoney(report.refundTotal)}`}
             />
           )}
-          <DetailCard label="Efectivo esperado" value={formatMoney(report.expectedCashUsd)} />
+          <DetailCard
+            label="Efectivo esperado"
+            value={`${formatMoney(report.expectedCashUsd)} / ${formatBsAmount(report.expectedCashVes)}`}
+          />
           <div className="rounded-lg border p-3">
             <div className="mb-2 text-xs text-muted-foreground">Resultado</div>
-            <ResultBadge amount={report.overShort} />
+            <ResultBadge amountUsd={report.overShort} amountVes={report.overShortVes} />
           </div>
         </div>
 
@@ -346,7 +388,7 @@ function CashReportDialog({
                 <DetailRow
                   key={method}
                   label={`${PAYMENT_METHOD_LABEL[method] ?? method} (${totals.count})`}
-                  value={formatMoney(totals.amountUsd)}
+                  value={formatMethodAmount(totals)}
                 />
               ))}
             </CardContent>
@@ -358,17 +400,34 @@ function CashReportDialog({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <DetailRow label="Monto inicial" value={formatMoney(report.openingAmount)} />
-              <DetailRow label="Ingresos" value={formatMoney(report.movementsIn)} />
-              <DetailRow label="Retiros" value={formatMoney(report.movementsOut)} />
+              <DetailRow
+                label="Monto inicial"
+                value={`${formatMoney(report.openingAmount)} / ${formatBsAmount(report.openingVes)}`}
+              />
+              <DetailRow
+                label="Ingresos"
+                value={`${formatMoney(report.movementsIn)} / ${formatBsAmount(report.movementsInVes)}`}
+              />
+              <DetailRow
+                label="Retiros"
+                value={`${formatMoney(report.movementsOut)} / ${formatBsAmount(report.movementsOutVes)}`}
+              />
               {report.refundCount > 0 && (
                 <>
                   <DetailRow label="Devoluciones" value={`-${formatMoney(report.refundTotal)}`} />
                   <DetailRow label="Venta neta" value={formatMoney(report.netSales)} strong />
                 </>
               )}
-              <DetailRow label="Esperado" value={formatMoney(report.expectedCashUsd)} strong />
-              <DetailRow label="Contado" value={formatMoney(report.closingAmount ?? 0)} strong />
+              <DetailRow
+                label="Esperado"
+                value={`${formatMoney(report.expectedCashUsd)} / ${formatBsAmount(report.expectedCashVes)}`}
+                strong
+              />
+              <DetailRow
+                label="Contado"
+                value={`${formatMoney(report.closingAmount ?? 0)} / ${formatBsAmount(report.closingVes ?? 0)}`}
+                strong
+              />
             </CardContent>
           </Card>
         </div>

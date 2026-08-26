@@ -14,7 +14,16 @@ export class CashError extends Error {
   }
 }
 
-export type PaymentMethodTotals = Record<string, { amountUsd: number; igtf: number; count: number }>
+export type PaymentMethodTotals = Record<
+  string,
+  {
+    amountUsd: number
+    amountOriginal: number | null
+    currency: 'USD' | 'VES'
+    igtf: number
+    count: number
+  }
+>
 
 export type CashReport = {
   sessionId: string
@@ -24,6 +33,7 @@ export type CashReport = {
   openedAt: number
   closedAt: number | null
   openingAmount: number
+  openingVes: number
   salesCount: number
   salesGross: number // sum of sale totals
   refundCount: number
@@ -33,10 +43,33 @@ export type CashReport = {
   igtfTotal: number
   byMethod: PaymentMethodTotals
   movementsIn: number // deposits
+  movementsInVes: number
   movementsOut: number // withdrawals
+  movementsOutVes: number
   expectedCashUsd: number // opening + cash_usd payments + deposits - withdrawals
+  expectedCashVes: number // opening Bs + cash_ves payments + deposits - withdrawals
   closingAmount: number | null
+  closingVes: number | null
   overShort: number | null
+  overShortVes: number | null
+}
+
+export function calculateExpectedCash(input: {
+  openingUsd: number
+  openingVes: number
+  cashSalesUsd: number
+  cashSalesVes: number
+  movementsInUsd: number
+  movementsInVes: number
+  movementsOutUsd: number
+  movementsOutVes: number
+}): { usd: number; ves: number } {
+  return {
+    usd:
+      input.openingUsd + input.cashSalesUsd + input.movementsInUsd - input.movementsOutUsd,
+    ves:
+      input.openingVes + input.cashSalesVes + input.movementsInVes - input.movementsOutVes
+  }
 }
 
 export async function getActiveSession(
@@ -55,6 +88,7 @@ export async function openSession(
   db: Db,
   userId: string,
   openingAmount: number,
+  openingVes: number,
   notes?: string | null
 ): Promise<typeof cashSessions.$inferSelect> {
   const existing = await getActiveSession(db, userId)
@@ -68,6 +102,7 @@ export async function openSession(
       userId,
       openedAt: now,
       openingAmount,
+      openingVes,
       status: 'open',
       notes: notes ?? null
     })
@@ -83,6 +118,8 @@ export async function addMovement(
     userId: string
     type: 'withdrawal' | 'deposit' | 'adjustment' | 'drop'
     amount: number
+    amountOriginal: number
+    currency: 'USD' | 'VES'
     reference?: string | null | undefined
     notes?: string | null | undefined
   }
@@ -102,6 +139,8 @@ export async function addMovement(
       userId: input.userId,
       type: input.type,
       amount: input.amount,
+      amountOriginal: input.amountOriginal,
+      currency: input.currency,
       reference: input.reference ?? null,
       notes: input.notes ?? null,
       ts: Date.now()
@@ -153,40 +192,81 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
   const payRows = await db
     .select({
       method: payments.method,
+      currency: payments.currency,
       amountUsd: sql<number>`COALESCE(SUM(${payments.amountUsd}), 0)`,
+      amountOriginal: sql<number>`COALESCE(SUM(
+        CASE
+          WHEN ${payments.currency} = 'VES'
+          THEN COALESCE(
+            ${payments.amountOriginal},
+            (${payments.amountUsd} / 100.0) * ${sales.rateUsed},
+            0
+          )
+          ELSE 0
+        END
+      ), 0)`,
       igtf: sql<number>`COALESCE(SUM(${payments.igtf}), 0)`,
       count: sql<number>`COUNT(*)`
     })
     .from(payments)
     .innerJoin(sales, eq(payments.saleId, sales.id))
     .where(and(eq(sales.cashSessionId, sessionId), eq(sales.status, 'completed')))
-    .groupBy(payments.method)
+    .groupBy(payments.method, payments.currency)
     .all()
 
   const byMethod: PaymentMethodTotals = {}
   for (const r of payRows) {
-    byMethod[r.method] = { amountUsd: r.amountUsd, igtf: r.igtf, count: r.count }
+    byMethod[r.method] = {
+      amountUsd: r.amountUsd,
+      amountOriginal: r.currency === 'VES' ? r.amountOriginal : null,
+      currency: r.currency,
+      igtf: r.igtf,
+      count: r.count
+    }
   }
 
   // Manual movements.
   const movRows = await db
     .select({
       type: cashMovements.type,
-      total: sql<number>`COALESCE(SUM(${cashMovements.amount}), 0)`
+      currency: cashMovements.currency,
+      total: sql<number>`COALESCE(SUM(${cashMovements.amount}), 0)`,
+      totalOriginal: sql<number>`COALESCE(SUM(${cashMovements.amountOriginal}), 0)`
     })
     .from(cashMovements)
     .where(eq(cashMovements.sessionId, sessionId))
-    .groupBy(cashMovements.type)
+    .groupBy(cashMovements.type, cashMovements.currency)
     .all()
   let movementsIn = 0
+  let movementsInVes = 0
   let movementsOut = 0
+  let movementsOutVes = 0
   for (const m of movRows) {
-    if (m.type === 'deposit') movementsIn += m.total
-    else if (m.type === 'withdrawal' || m.type === 'drop') movementsOut += m.total
+    const incoming = m.type === 'deposit'
+    const outgoing = m.type === 'withdrawal' || m.type === 'drop'
+    if (m.currency === 'VES') {
+      if (incoming) movementsInVes += m.totalOriginal
+      else if (outgoing) movementsOutVes += m.totalOriginal
+    } else {
+      if (incoming) movementsIn += m.total
+      else if (outgoing) movementsOut += m.total
+    }
   }
 
   const cashUsd = byMethod['cash_usd']?.amountUsd ?? 0
-  const expectedCashUsd = session.s.openingAmount + cashUsd + movementsIn - movementsOut
+  const cashVes = byMethod['cash_ves']?.amountOriginal ?? 0
+  const expected = calculateExpectedCash({
+    openingUsd: session.s.openingAmount,
+    openingVes: session.s.openingVes,
+    cashSalesUsd: cashUsd,
+    cashSalesVes: cashVes,
+    movementsInUsd: movementsIn,
+    movementsInVes,
+    movementsOutUsd: movementsOut,
+    movementsOutVes
+  })
+  const expectedCashUsd = expected.usd
+  const expectedCashVes = expected.ves
   const refundTotal = refundAgg?.total ?? 0
 
   return {
@@ -197,6 +277,7 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
     openedAt: session.s.openedAt,
     closedAt: session.s.closedAt,
     openingAmount: session.s.openingAmount,
+    openingVes: session.s.openingVes,
     salesCount: saleAgg?.count ?? 0,
     salesGross: saleAgg?.gross ?? 0,
     refundCount: refundAgg?.count ?? 0,
@@ -206,10 +287,15 @@ export async function buildReport(db: Db, sessionId: string): Promise<CashReport
     igtfTotal: saleAgg?.igtf ?? 0,
     byMethod,
     movementsIn,
+    movementsInVes,
     movementsOut,
+    movementsOutVes,
     expectedCashUsd,
+    expectedCashVes,
     closingAmount: session.s.closingAmount,
-    overShort: session.s.overShortAmount
+    closingVes: session.s.closingVes,
+    overShort: session.s.overShortAmount,
+    overShortVes: session.s.overShortVes
   }
 }
 
@@ -253,7 +339,8 @@ export async function listClosedReports(
 export async function closeSession(
   db: Db,
   sessionId: string,
-  declaredClosing: number
+  declaredClosing: number,
+  declaredClosingVes: number
 ): Promise<CashReport> {
   const session = await db.select().from(cashSessions).where(eq(cashSessions.id, sessionId)).get()
   if (!session) throw new CashError('NOT_FOUND', 'sesión no existe')
@@ -261,6 +348,7 @@ export async function closeSession(
 
   const report = await buildReport(db, sessionId)
   const overShort = declaredClosing - report.expectedCashUsd
+  const overShortVes = declaredClosingVes - report.expectedCashVes
   const now = Date.now()
   await db
     .update(cashSessions)
@@ -268,8 +356,11 @@ export async function closeSession(
       status: 'closed',
       closedAt: now,
       closingAmount: declaredClosing,
+      closingVes: declaredClosingVes,
       expectedAmount: report.expectedCashUsd,
-      overShortAmount: overShort
+      expectedVes: report.expectedCashVes,
+      overShortAmount: overShort,
+      overShortVes
     })
     .where(eq(cashSessions.id, sessionId))
     .run()

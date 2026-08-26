@@ -97,7 +97,17 @@ describe('contracts registry', () => {
       sessionId: 'session-1',
       cashSessionId: 'cash-1',
       declaredClosing: 1000,
+      declaredClosingVes: 2500.5,
       authorization: { username: 'manager', password: 'secret' }
+    })
+    expect(out.success).toBe(true)
+  })
+
+  it('cash.open accepts independent opening amounts in reference and bolívares', () => {
+    const out = contracts.cash.open.input.safeParse({
+      sessionId: 'session-1',
+      openingAmount: 1000,
+      openingVes: 5000
     })
     expect(out.success).toBe(true)
   })

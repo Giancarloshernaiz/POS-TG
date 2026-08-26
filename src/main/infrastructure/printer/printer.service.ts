@@ -293,6 +293,15 @@ export async function printCashReport(
   }
 
   const money = (cents: number): string => `$${(cents / 100).toFixed(2)}`
+  const vesMoney = (amount: number): string =>
+    `Bs ${amount.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const methodMoney = (totals: CashReportDTO['byMethod'][string]): string =>
+    totals.currency === 'VES'
+      ? `Bs ${(totals.amountOriginal ?? 0).toLocaleString('es-VE', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })}`
+      : money(totals.amountUsd)
   const opened = new Date(report.openedAt)
   const closed = report.closedAt ? new Date(report.closedAt) : null
 
@@ -323,20 +332,28 @@ export async function printCashReport(
   printer.alignLeft()
   for (const [method, totals] of Object.entries(report.byMethod)) {
     const label = PAYMENT_LABEL[method as PaymentMethod] ?? method
-    printer.leftRight(`${label} (${totals.count})`, money(totals.amountUsd))
+    printer.leftRight(`${label} (${totals.count})`, methodMoney(totals))
   }
   printer.drawLine()
-  printer.leftRight('Monto inicial:', money(report.openingAmount))
-  printer.leftRight('Ingresos:', money(report.movementsIn))
-  printer.leftRight('Retiros:', money(report.movementsOut))
-  printer.leftRight('Efectivo esperado:', money(report.expectedCashUsd))
-  printer.leftRight('Efectivo contado:', money(report.closingAmount ?? 0))
+  printer.leftRight('Monto inicial Ref.:', money(report.openingAmount))
+  printer.leftRight('Monto inicial Bs:', vesMoney(report.openingVes))
+  printer.leftRight('Ingresos Ref.:', money(report.movementsIn))
+  printer.leftRight('Ingresos Bs:', vesMoney(report.movementsInVes))
+  printer.leftRight('Retiros Ref.:', money(report.movementsOut))
+  printer.leftRight('Retiros Bs:', vesMoney(report.movementsOutVes))
+  printer.leftRight('Esperado Ref.:', money(report.expectedCashUsd))
+  printer.leftRight('Esperado Bs:', vesMoney(report.expectedCashVes))
+  printer.leftRight('Contado Ref.:', money(report.closingAmount ?? 0))
+  printer.leftRight('Contado Bs:', vesMoney(report.closingVes ?? 0))
   printer.bold(true)
-  const difference = report.overShort ?? 0
-  printer.leftRight(
-    difference === 0 ? 'Resultado:' : difference > 0 ? 'Sobrante:' : 'Faltante:',
-    difference === 0 ? 'CUADRADA' : money(Math.abs(difference))
-  )
+  const differenceUsd = report.overShort ?? 0
+  const differenceVes = report.overShortVes ?? 0
+  if (differenceUsd === 0 && differenceVes === 0) {
+    printer.leftRight('Resultado:', 'CUADRADA')
+  } else {
+    printer.leftRight('Diferencia Ref.:', money(differenceUsd))
+    printer.leftRight('Diferencia Bs:', vesMoney(differenceVes))
+  }
   printer.bold(false)
   printer.drawLine()
   printer.alignCenter()

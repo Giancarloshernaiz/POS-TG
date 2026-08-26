@@ -68,7 +68,11 @@ export async function printCashReport(sessionId: string, cashSessionId: string):
 }
 
 export function useOpenCash(): ReturnType<
-  typeof useMutation<CashSessionRowDTO, Error, { openingAmount: number; notes?: string | null }>
+  typeof useMutation<
+    CashSessionRowDTO,
+    Error,
+    { openingAmount: number; openingVes: number; notes?: string | null }
+  >
 > {
   const qc = useQueryClient()
   const sessionId = useAuth((s) => s.session?.id ?? '')
@@ -77,6 +81,7 @@ export function useOpenCash(): ReturnType<
       const res = await api.cash.open({
         sessionId,
         openingAmount: input.openingAmount,
+        openingVes: input.openingVes,
         notes: input.notes ?? null
       })
       if (!res.ok) throw new Error(res.error.code)
@@ -94,6 +99,8 @@ export function useAddMovement(): ReturnType<
       cashSessionId: string
       type: 'withdrawal' | 'deposit' | 'adjustment' | 'drop'
       amount: number
+      amountOriginal: number
+      currency: 'USD' | 'VES'
       reference?: string | null
       notes?: string | null
     }
@@ -108,6 +115,8 @@ export function useAddMovement(): ReturnType<
         cashSessionId: input.cashSessionId,
         type: input.type,
         amount: input.amount,
+        amountOriginal: input.amountOriginal,
+        currency: input.currency,
         reference: input.reference ?? null,
         notes: input.notes ?? null
       })
@@ -125,6 +134,7 @@ export function useCloseCash(): ReturnType<
     {
       cashSessionId: string
       declaredClosing: number
+      declaredClosingVes: number
       authorization?: { username: string; password: string } | null
     }
   >
@@ -137,6 +147,7 @@ export function useCloseCash(): ReturnType<
         sessionId,
         cashSessionId: input.cashSessionId,
         declaredClosing: input.declaredClosing,
+        declaredClosingVes: input.declaredClosingVes,
         authorization: input.authorization ?? null
       })
       if (!res.ok) throw new Error(res.error.code)

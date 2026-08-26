@@ -53,9 +53,13 @@ function toSessionRow(row: typeof cashSessions.$inferSelect): CashSessionRowDTO 
     openedAt: row.openedAt,
     closedAt: row.closedAt,
     openingAmount: row.openingAmount,
+    openingVes: row.openingVes,
     closingAmount: row.closingAmount,
+    closingVes: row.closingVes,
     expectedAmount: row.expectedAmount,
+    expectedVes: row.expectedVes,
     overShortAmount: row.overShortAmount,
+    overShortVes: row.overShortVes,
     status: row.status,
     notes: row.notes
   }
@@ -72,13 +76,19 @@ export const cashHandlers = {
   async open(input: Input<'open'>): Promise<CashSessionRowDTO> {
     const session = requirePermission(input.sessionId, PERMISSIONS.CASH_OPEN)
     const db = getDb()
-    const row = await openSession(db, session.userId, input.openingAmount, input.notes)
+    const row = await openSession(
+      db,
+      session.userId,
+      input.openingAmount,
+      input.openingVes,
+      input.notes
+    )
     await audit({
       userId: session.userId,
       action: 'cash.open',
       targetType: 'cash_session',
       targetId: row.id,
-      after: { openingAmount: input.openingAmount }
+      after: { openingAmount: input.openingAmount, openingVes: input.openingVes }
     })
     return toSessionRow(row)
   },
@@ -96,6 +106,8 @@ export const cashHandlers = {
       userId: session.userId,
       type: input.type,
       amount: input.amount,
+      amountOriginal: input.amountOriginal,
+      currency: input.currency,
       reference: input.reference,
       notes: input.notes
     })
@@ -104,7 +116,12 @@ export const cashHandlers = {
       action: `cash.${input.type}`,
       targetType: 'cash_session',
       targetId: input.cashSessionId,
-      after: { amount: input.amount, reference: input.reference }
+      after: {
+        amount: input.amount,
+        amountOriginal: input.amountOriginal,
+        currency: input.currency,
+        reference: input.reference
+      }
     })
     return { ok: true }
   },
@@ -189,7 +206,12 @@ export const cashHandlers = {
       }
     }
 
-    const report = await closeSession(db, input.cashSessionId, input.declaredClosing)
+    const report = await closeSession(
+      db,
+      input.cashSessionId,
+      input.declaredClosing,
+      input.declaredClosingVes
+    )
     await audit({
       userId: session.userId,
       action: 'cash.close',
@@ -197,8 +219,11 @@ export const cashHandlers = {
       targetId: input.cashSessionId,
       after: {
         declaredClosing: input.declaredClosing,
+        declaredClosingVes: input.declaredClosingVes,
         expected: report.expectedCashUsd,
+        expectedVes: report.expectedCashVes,
         overShort: report.overShort,
+        overShortVes: report.overShortVes,
         authorizedByUserId: authorizedBy.userId,
         authorizedByName: authorizedBy.fullName,
         authorizedByRole: authorizedBy.roleName

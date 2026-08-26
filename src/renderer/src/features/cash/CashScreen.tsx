@@ -29,11 +29,11 @@ import {
 } from '@renderer/components/ui/table'
 import { useActiveSession, useCashReport, useAddMovement, useCloseCash } from './hooks'
 import { OpenCashForm } from './OpenCashForm'
-import { formatMoney } from '@renderer/lib/money'
-import { DualPrice } from '@renderer/components/DualPrice'
-import { MoneyInput } from '@renderer/components/MoneyInput'
+import { formatBsAmount, formatMoney } from '@renderer/lib/money'
+import { CashAmountsInput } from './CashAmountsInput'
 import { PAYMENT_METHOD_LABEL } from '@renderer/lib/paymentMethods'
 import { useAuth } from '@renderer/stores/auth'
+import { useFx } from '@renderer/stores/fx'
 import type { CashReportDTO } from '@shared/ipc/contracts/cash'
 
 export function CashScreen(): React.JSX.Element {
@@ -119,7 +119,10 @@ function ReportView({ report }: { report: CashReportDTO }): React.JSX.Element {
               <Row label="Venta neta" money={report.netSales} />
             </>
           )}
-          <Row label="Monto inicial" money={report.openingAmount} />
+          <Row
+            label="Monto inicial"
+            value={`${formatMoney(report.openingAmount)} · ${formatBsAmount(report.openingVes)}`}
+          />
         </CardContent>
       </Card>
 
@@ -143,7 +146,12 @@ function ReportView({ report }: { report: CashReportDTO }): React.JSX.Element {
                   <TableRow key={m}>
                     <TableCell>{PAYMENT_METHOD_LABEL[m] ?? m}</TableCell>
                     <TableCell className="text-right font-mono">
-                      {formatMoney(t.amountUsd)}
+                      {t.currency === 'VES'
+                        ? `Bs ${(t.amountOriginal ?? 0).toLocaleString('es-VE', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}`
+                        : formatMoney(t.amountUsd)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -156,14 +164,23 @@ function ReportView({ report }: { report: CashReportDTO }): React.JSX.Element {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Efectivo esperado en caja</CardTitle>
-          <CardDescription>Inicial + efectivo $ + ingresos − retiros</CardDescription>
+          <CardDescription>Inicial + ventas en efectivo + ingresos − retiros</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <Row label="Ingresos manuales" money={report.movementsIn} />
-          <Row label="Retiros" money={report.movementsOut} />
+          <Row
+            label="Ingresos manuales"
+            value={`${formatMoney(report.movementsIn)} · ${formatBsAmount(report.movementsInVes)}`}
+          />
+          <Row
+            label="Retiros"
+            value={`${formatMoney(report.movementsOut)} · ${formatBsAmount(report.movementsOutVes)}`}
+          />
           <div className="border-t pt-2">
-            <div className="text-xs text-muted-foreground">Esperado (USD)</div>
-            <DualPrice cents={report.expectedCashUsd} align="left" className="text-lg font-bold" />
+            <div className="text-xs text-muted-foreground">Efectivo físico esperado</div>
+            <div className="text-lg font-bold">{formatMoney(report.expectedCashUsd)}</div>
+            <div className="font-semibold text-muted-foreground">
+              {formatBsAmount(report.expectedCashVes)}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -184,7 +201,7 @@ function Row({
     <div className="flex items-center justify-between border-b py-1 last:border-0">
       <span className="text-muted-foreground">{label}</span>
       {money !== undefined ? (
-        <DualPrice cents={money} />
+        <span className="font-mono">{formatMoney(money)}</span>
       ) : (
         <span className="font-mono">{value}</span>
       )}
@@ -202,24 +219,30 @@ function MovementDialog({
   onClose: () => void
 }): React.JSX.Element {
   const mut = useAddMovement()
-  const [amountCents, setAmountCents] = useState(0)
+  const rate = useFx((state) => state.rate?.rate ?? null)
+  const [amount, setAmount] = useState(0)
+  const [currency, setCurrency] = useState<'USD' | 'VES'>('USD')
   const [reference, setReference] = useState('')
 
   async function submit(): Promise<void> {
-    if (amountCents <= 0) {
+    if (amount <= 0 || (currency === 'VES' && !rate)) {
       toast.error('Monto inválido')
       return
     }
     if (!type) return
     try {
+      const amountCents =
+        currency === 'USD' ? Math.round(amount * 100) : Math.round((amount / Number(rate)) * 100)
       await mut.mutateAsync({
         cashSessionId,
         type,
         amount: amountCents,
+        amountOriginal: amount,
+        currency,
         reference: reference || null
       })
       toast.success(type === 'deposit' ? 'Ingreso registrado' : 'Retiro registrado')
-      setAmountCents(0)
+      setAmount(0)
       setReference('')
       onClose()
     } catch (e) {
@@ -234,12 +257,43 @@ function MovementDialog({
           <DialogTitle>
             {type === 'deposit' ? 'Ingreso de efectivo' : 'Retiro de efectivo'}
           </DialogTitle>
-          <DialogDescription>Ingresa el monto en $ o en Bs.</DialogDescription>
+          <DialogDescription>Selecciona la moneda real del efectivo que entra o sale.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-2">
+            <Label htmlFor="mvCurrency">Moneda</Label>
+            <select
+              id="mvCurrency"
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={currency}
+              onChange={(event) => {
+                setCurrency(event.target.value as 'USD' | 'VES')
+                setAmount(0)
+              }}
+            >
+              <option value="USD">Referencia</option>
+              <option value="VES">Bolívares</option>
+            </select>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="mvAmount">Monto</Label>
-            <MoneyInput id="mvAmount" valueCents={amountCents} onChangeCents={setAmountCents} />
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                {currency === 'USD' ? 'Ref.' : 'Bs'}
+              </span>
+              <Input
+                id="mvAmount"
+                type="number"
+                min={0}
+                step="0.01"
+                className={currency === 'USD' ? 'pl-10' : 'pl-7'}
+                value={amount || ''}
+                onChange={(event) => setAmount(Math.max(0, Number(event.target.value) || 0))}
+              />
+            </div>
+            {currency === 'VES' && !rate && (
+              <p className="text-xs text-destructive">Carga la tasa antes de registrar bolívares.</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="mvRef">Referencia / motivo</Label>
@@ -275,14 +329,17 @@ function CloseDialog({
 }): React.JSX.Element {
   const mut = useCloseCash()
   const [declaredCents, setDeclaredCents] = useState(0)
+  const [declaredVes, setDeclaredVes] = useState(0)
   const [touched, setTouched] = useState(false)
   const [approverUsername, setApproverUsername] = useState('')
   const [approverPassword, setApproverPassword] = useState('')
 
   const diff = declaredCents - report.expectedCashUsd
+  const diffVes = declaredVes - report.expectedCashVes
 
   function closeDialog(): void {
     setDeclaredCents(0)
+    setDeclaredVes(0)
     setTouched(false)
     setApproverUsername('')
     setApproverPassword('')
@@ -302,15 +359,17 @@ function CloseDialog({
       const r = await mut.mutateAsync({
         cashSessionId,
         declaredClosing: declaredCents,
+        declaredClosingVes: declaredVes,
         authorization: requiresApproval
           ? { username: approverUsername.trim(), password: approverPassword }
           : null
       })
       const os = r.overShort ?? 0
+      const osVes = r.overShortVes ?? 0
       toast.success(
-        os === 0
+        os === 0 && osVes === 0
           ? 'Caja cerrada — cuadrada'
-          : `Caja cerrada — ${os > 0 ? 'sobrante' : 'faltante'} ${formatMoney(Math.abs(os))}`
+          : `Caja cerrada — diferencia ${formatMoney(os)} / ${formatBsAmount(osVes)}`
       )
       closeDialog()
     } catch (e) {
@@ -339,7 +398,10 @@ function CloseDialog({
         <div className="space-y-3">
           <div className="flex justify-between rounded-md bg-muted/30 p-3 text-sm">
             <span className="text-muted-foreground">Efectivo esperado</span>
-            <span className="font-mono font-semibold">{formatMoney(report.expectedCashUsd)}</span>
+            <span className="text-right font-mono font-semibold">
+              <span className="block">{formatMoney(report.expectedCashUsd)}</span>
+              <span className="block">{formatBsAmount(report.expectedCashVes)}</span>
+            </span>
           </div>
           {report.refundCount > 0 && (
             <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
@@ -359,11 +421,16 @@ function CloseDialog({
           )}
           <div className="space-y-2">
             <Label htmlFor="declared">Efectivo contado</Label>
-            <MoneyInput
-              id="declared"
-              valueCents={declaredCents}
-              onChangeCents={(c) => {
+            <CashAmountsInput
+              idPrefix="declared"
+              usdCents={declaredCents}
+              vesAmount={declaredVes}
+              onUsdCents={(c) => {
                 setDeclaredCents(c)
+                setTouched(true)
+              }}
+              onVesAmount={(value) => {
+                setDeclaredVes(value)
                 setTouched(true)
               }}
               autoFocus
@@ -373,15 +440,24 @@ function CloseDialog({
             <div
               className={
                 'flex justify-between rounded-md p-3 text-sm ' +
-                (diff === 0
+                (diff === 0 && diffVes === 0
                   ? 'bg-emerald-500/10 text-emerald-700'
-                  : diff > 0
+                  : diff >= 0 && diffVes >= 0
                     ? 'bg-sky-500/10 text-sky-700'
                     : 'bg-rose-500/10 text-rose-700')
               }
             >
-              <span>{diff === 0 ? 'Cuadrada' : diff > 0 ? 'Sobrante' : 'Faltante'}</span>
-              <span className="font-mono font-semibold">{formatMoney(Math.abs(diff))}</span>
+              <span>
+                {diff === 0 && diffVes === 0
+                  ? 'Cuadrada'
+                  : diff >= 0 && diffVes >= 0
+                    ? 'Sobrante'
+                    : 'Diferencia'}
+              </span>
+              <span className="text-right font-mono font-semibold">
+                <span className="block">{formatMoney(diff)}</span>
+                <span className="block">{formatBsAmount(diffVes)}</span>
+              </span>
             </div>
           )}
           {requiresApproval && (

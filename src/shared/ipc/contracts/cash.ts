@@ -2,7 +2,13 @@ import { z } from 'zod'
 
 const methodTotals = z.record(
   z.string(),
-  z.object({ amountUsd: z.number(), igtf: z.number(), count: z.number() })
+  z.object({
+    amountUsd: z.number(),
+    amountOriginal: z.number().nullable(),
+    currency: z.enum(['USD', 'VES']),
+    igtf: z.number(),
+    count: z.number()
+  })
 )
 
 const cashReport = z.object({
@@ -13,6 +19,7 @@ const cashReport = z.object({
   openedAt: z.number(),
   closedAt: z.number().nullable(),
   openingAmount: z.number(),
+  openingVes: z.number(),
   salesCount: z.number(),
   salesGross: z.number(),
   refundCount: z.number(),
@@ -22,10 +29,15 @@ const cashReport = z.object({
   igtfTotal: z.number(),
   byMethod: methodTotals,
   movementsIn: z.number(),
+  movementsInVes: z.number(),
   movementsOut: z.number(),
+  movementsOutVes: z.number(),
   expectedCashUsd: z.number(),
+  expectedCashVes: z.number(),
   closingAmount: z.number().nullable(),
-  overShort: z.number().nullable()
+  closingVes: z.number().nullable(),
+  overShort: z.number().nullable(),
+  overShortVes: z.number().nullable()
 })
 
 const sessionRow = z.object({
@@ -34,9 +46,13 @@ const sessionRow = z.object({
   openedAt: z.number(),
   closedAt: z.number().nullable(),
   openingAmount: z.number(),
+  openingVes: z.number(),
   closingAmount: z.number().nullable(),
+  closingVes: z.number().nullable(),
   expectedAmount: z.number().nullable(),
+  expectedVes: z.number().nullable(),
   overShortAmount: z.number().nullable(),
+  overShortVes: z.number().nullable(),
   status: z.string(),
   notes: z.string().nullable()
 })
@@ -55,6 +71,7 @@ export const cashContract = {
     input: z.object({
       sessionId: z.string(),
       openingAmount: z.number().int().nonnegative(),
+      openingVes: z.number().nonnegative(),
       notes: z.string().nullable().optional()
     }),
     output: sessionRow,
@@ -68,6 +85,8 @@ export const cashContract = {
       cashSessionId: z.string(),
       type: z.enum(['withdrawal', 'deposit', 'adjustment', 'drop']),
       amount: z.number().int(),
+      amountOriginal: z.number().positive(),
+      currency: z.enum(['USD', 'VES']),
       reference: z.string().nullable().optional(),
       notes: z.string().nullable().optional()
     }),
@@ -102,6 +121,7 @@ export const cashContract = {
       sessionId: z.string(),
       cashSessionId: z.string(),
       declaredClosing: z.number().int().nonnegative(),
+      declaredClosingVes: z.number().nonnegative(),
       authorization: z
         .object({
           username: z.string().trim().min(1),

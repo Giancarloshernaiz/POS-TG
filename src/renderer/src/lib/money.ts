@@ -33,6 +33,14 @@ export function formatVes(cents: number | null | undefined, rate: number | null)
   return vesFormatter.format(fromCents(cents) * rate)
 }
 
+/** Format an amount already expressed in bolívares (not USD cents). */
+export function formatBsAmount(amount: number | null | undefined): string {
+  return `Bs ${(amount ?? 0).toLocaleString(LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`
+}
+
 export function formatTaxBp(bp: number): string {
   return `${(bp / 100).toFixed(2)}%`
 }
