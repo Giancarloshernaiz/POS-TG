@@ -24,6 +24,8 @@ export const users = sqliteTable(
     mustChangePassword: integer('must_change_password', { mode: 'boolean' })
       .notNull()
       .default(false),
+    registerId: text('register_id'),
+    registerName: text('register_name'),
     lastLoginAt: integer('last_login_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()

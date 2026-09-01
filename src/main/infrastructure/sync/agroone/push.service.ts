@@ -7,6 +7,7 @@ import {
   products,
   customers,
   sellers,
+  users,
   syncState
 } from '@main/infrastructure/db/schema'
 import { getIdentity, isProvisioned } from '@main/infrastructure/device/identity.service'
@@ -236,6 +237,15 @@ export async function pushSale(saleId: string): Promise<void> {
 
     const clientAgroId = await resolveClientAgroId(baseUrl, sale.customerId)
     const payRows = await db.select().from(payments).where(eq(payments.saleId, saleId)).all()
+    const cashier = await db
+      .select({
+        fullName: users.fullName,
+        registerId: users.registerId,
+        registerName: users.registerName
+      })
+      .from(users)
+      .where(eq(users.id, sale.userId))
+      .get()
     const currencies = new Set(payRows.map((p) => p.currency))
     const currency = currencies.size > 1 ? 'MIXTO' : (payRows[0]?.currency ?? 'USD')
 
@@ -263,6 +273,14 @@ export async function pushSale(saleId: string): Promise<void> {
         : {}),
       currency,
       idempotencyKey: saleId,
+      // La tienda sigue perteneciendo al dispositivo provisionado, pero la
+      // caja administrativa puede asignarse por usuario (turnos/cajas
+      // separadas en una misma laptop). Sin asignacion se conserva el
+      // comportamiento historico basado en la identidad fisica del POS.
+      sourceDeviceId: cashier?.registerId ?? identity.nodeId,
+      sourceDeviceName: cashier?.registerName ?? identity.nodeLabel,
+      sourceCashSessionId: sale.cashSessionId,
+      ...(cashier?.fullName ? { sourceCashierName: cashier.fullName } : {}),
       ...(vendedorAgroId !== undefined ? { vendedorAgroId } : {}),
       payments: payRows.map((p) => {
         const montoOriginalVes =

@@ -408,6 +408,10 @@ export type SaleHeaderInput = {
   descripcion?: string
   usarSaldoFavor?: boolean
   saldoFavorMonto?: number
+  sourceDeviceId: string
+  sourceDeviceName: string
+  sourceCashSessionId: string
+  sourceCashierName?: string
   payments: Array<{ metodoPago: string; monto: number; moneda: 'USD' | 'VES' }>
 }
 
@@ -443,6 +447,10 @@ export async function postSaleFull(
     descripcion: input.descripcion,
     usar_saldo_favor: input.usarSaldoFavor,
     saldo_favor_monto: input.saldoFavorMonto,
+    source_device_id: input.sourceDeviceId,
+    source_device_name: input.sourceDeviceName,
+    source_cash_session_id: input.sourceCashSessionId,
+    source_cashier_name: input.sourceCashierName,
     payments: input.payments,
     idempotency_key: input.idempotencyKey,
     details: input.lines.map((l) => ({
