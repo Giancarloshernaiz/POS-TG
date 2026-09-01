@@ -42,7 +42,11 @@ export function CustomerCedulaSlot({
   const [docId, setDocId] = useState('')
   const [searching, setSearching] = useState(false)
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
-  const [quickCreate, setQuickCreate] = useState<{ docType: DocType; docId: string } | null>(null)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
+  const [quickCreate, setQuickCreate] = useState<{
+    docType: DocType
+    docId: string
+  } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { data: suggestions = [], isFetching: loadingSuggestions } = useCustomers({
     search: docId.trim() || undefined,
@@ -51,6 +55,7 @@ export function CustomerCedulaSlot({
 
   function selectCustomer(selected: CustomerDTO): void {
     setSuggestionsOpen(false)
+    setActiveSuggestion(-1)
     setDocId('')
     onCustomer(selected)
     onReady()
@@ -89,7 +94,13 @@ export function CustomerCedulaSlot({
             </div>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => onCustomer(null)}>
+        <Button
+          id="pos-change-customer"
+          variant="ghost"
+          size="sm"
+          onClick={() => onCustomer(null)}
+          title="Cambiar cliente (F1)"
+        >
           <X className="h-4 w-4" />
           Cambiar
         </Button>
@@ -104,7 +115,13 @@ export function CustomerCedulaSlot({
           <Badge variant="secondary">Consumidor final</Badge>
           <span className="text-sm text-muted-foreground">Venta sin cliente registrado</span>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => onCustomer(null)}>
+        <Button
+          id="pos-change-customer"
+          variant="ghost"
+          size="sm"
+          onClick={() => onCustomer(null)}
+          title="Cambiar cliente (F1)"
+        >
           <X className="h-4 w-4" />
           Cambiar
         </Button>
@@ -182,15 +199,54 @@ export function CustomerCedulaSlot({
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            id="pos-customer-search"
             ref={inputRef}
             autoFocus
             value={docId}
             onChange={(e) => {
               setDocId(e.target.value)
               setSuggestionsOpen(Boolean(e.target.value.trim()))
+              setActiveSuggestion(-1)
             }}
             onFocus={() => setSuggestionsOpen(Boolean(docId.trim()))}
-            onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}
+            onBlur={() =>
+              window.setTimeout(() => {
+                setSuggestionsOpen(false)
+                setActiveSuggestion(-1)
+              }, 120)
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setSuggestionsOpen(false)
+                setActiveSuggestion(-1)
+                return
+              }
+              if (event.key === 'ArrowDown' && suggestions.length > 0) {
+                event.preventDefault()
+                setSuggestionsOpen(true)
+                setActiveSuggestion((current) =>
+                  current >= Math.min(suggestions.length, 8) - 1 ? 0 : current + 1
+                )
+                return
+              }
+              if (event.key === 'ArrowUp' && suggestions.length > 0) {
+                event.preventDefault()
+                setSuggestionsOpen(true)
+                setActiveSuggestion((current) =>
+                  current <= 0 ? Math.min(suggestions.length, 8) - 1 : current - 1
+                )
+                return
+              }
+              if (
+                event.key === 'Enter' &&
+                suggestionsOpen &&
+                activeSuggestion >= 0 &&
+                suggestions[activeSuggestion]
+              ) {
+                event.preventDefault()
+                selectCustomer(suggestions[activeSuggestion])
+              }
+            }}
             placeholder="Nombre, cédula o RIF (Enter para buscar)"
             className="pl-8"
           />
@@ -201,13 +257,18 @@ export function CustomerCedulaSlot({
                   <Loader2 className="h-4 w-4 animate-spin" /> Buscando clientes…
                 </div>
               ) : suggestions.length > 0 ? (
-                suggestions.slice(0, 8).map((candidate) => (
+                suggestions.slice(0, 8).map((candidate, index) => (
                   <button
                     key={candidate.id}
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveSuggestion(index)}
                     onClick={() => selectCustomer(candidate)}
-                    className="flex w-full items-center justify-between gap-3 rounded-sm px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                    className={`flex w-full items-center justify-between gap-3 rounded-sm px-3 py-2 text-left text-sm ${
+                      activeSuggestion === index
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent hover:text-accent-foreground'
+                    }`}
                   >
                     <span className="min-w-0">
                       <span className="block truncate font-medium">{candidate.name}</span>

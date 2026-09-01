@@ -15,7 +15,8 @@ import {
   WalletCards,
   CircleDollarSign,
   Clock3,
-  PauseCircle
+  PauseCircle,
+  Keyboard
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@renderer/components/ui/input'
@@ -137,22 +138,10 @@ function POSContent(): React.JSX.Element {
   const [currencyMode, setCurrencyMode] = useState<CurrencyMode>('MIXED')
   const [useStoreCredit, setUseStoreCredit] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const sellerTriggerRef = useRef<HTMLButtonElement>(null)
+  const currencyTriggerRef = useRef<HTMLButtonElement>(null)
 
   const customerReady = cart.customer !== null || cart.walkIn
-
-  // F8 = "Sin cliente / Consumidor final" shortcut (only meaningful pre-customer).
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'F8' && !customerReady) {
-        e.preventDefault()
-        cart.setWalkIn(true)
-        // Defer focus to next tick so the scanner input is mounted.
-        setTimeout(() => searchRef.current?.focus(), 0)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [customerReady, cart])
 
   const [code, setCode] = useState('')
   const [productSuggestions, setProductSuggestions] = useState<ProductDTO[]>([])
@@ -310,6 +299,7 @@ function POSContent(): React.JSX.Element {
   }
 
   function togglePaymentMethod(method: PaymentMethod): void {
+    const adding = !pays.some((payment) => payment.method === method)
     setPays((current) => {
       if (current.some((payment) => payment.method === method)) {
         return current.filter((payment) => payment.method !== method)
@@ -319,6 +309,15 @@ function POSContent(): React.JSX.Element {
       next[targetIndex]!.amountCents = amountToCompleteWithBenefits(next, targetIndex)
       return next
     })
+    if (adding) {
+      window.setTimeout(() => {
+        const entry = document.querySelector<HTMLElement>(`[data-pos-payment-entry="${method}"]`)
+        const inputs = entry?.querySelectorAll<HTMLInputElement>('input:not(:disabled)')
+        const input = inputs?.[PAYMENT_CURRENCY[method] === 'VES' ? 1 : 0]
+        input?.focus()
+        input?.select()
+      }, 0)
+    }
   }
 
   function completePayment(id: string): void {
@@ -498,6 +497,110 @@ function POSContent(): React.JSX.Element {
     }
   }
 
+  const shortcutActionsRef = useRef({
+    focusCustomer: (): void => undefined,
+    focusProducts: (): void => undefined,
+    focusPayments: (): void => undefined,
+    checkout: (): void => undefined,
+    hold: (): void => undefined,
+    drafts: (): void => undefined,
+    credit: (): void => undefined,
+    walkIn: (): void => undefined,
+    focusSeller: (): void => undefined,
+    focusCurrency: (): void => undefined
+  })
+
+  useEffect(() => {
+    shortcutActionsRef.current = {
+      focusCustomer: () => {
+        const changeButton = document.getElementById(
+          'pos-change-customer'
+        ) as HTMLButtonElement | null
+        if (changeButton) {
+          changeButton.click()
+          window.setTimeout(() => {
+            const input = document.getElementById('pos-customer-search') as HTMLInputElement | null
+            input?.focus()
+            input?.select()
+          }, 0)
+          return
+        }
+        const input = document.getElementById('pos-customer-search') as HTMLInputElement | null
+        input?.focus()
+        input?.select()
+      },
+      focusProducts: () => {
+        if (!customerReady) {
+          toast.info('Primero selecciona un cliente o usa F8 para consumidor final')
+          return
+        }
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      },
+      focusPayments: () => {
+        if (cart.lines.length === 0) {
+          toast.info('Escanea al menos un producto antes de seleccionar el pago')
+          return
+        }
+        document
+          .querySelector<HTMLButtonElement>('[data-pos-payment-method]:not(:disabled)')
+          ?.focus()
+      },
+      checkout: () => {
+        if (!submitting) void checkout()
+      },
+      hold: () => {
+        if (!saveSaleDraft.isPending) void holdSale()
+      },
+      drafts: () => setDraftsOpen(true),
+      credit: () => {
+        if (!cart.customer || cart.customer.returnCreditBalance <= 0) {
+          toast.info('El cliente seleccionado no tiene crédito por devolución disponible')
+          return
+        }
+        setUseStoreCredit((current) => !current)
+        setPays([])
+      },
+      walkIn: () => {
+        if (customerReady) return
+        cart.setWalkIn(true)
+        window.setTimeout(() => sellerTriggerRef.current?.focus(), 0)
+      },
+      focusSeller: () => {
+        sellerTriggerRef.current?.focus()
+      },
+      focusCurrency: () => {
+        currencyTriggerRef.current?.focus()
+      }
+    }
+  })
+
+  // Los atajos de función son globales, pero Enter y las flechas permanecen bajo
+  // control del campo activo para no interferir con la pistola ni con los importes.
+  useEffect(() => {
+    function onShortcut(event: KeyboardEvent): void {
+      const actionByKey: Partial<Record<string, () => void>> = {
+        F1: shortcutActionsRef.current.focusCustomer,
+        F2: shortcutActionsRef.current.focusProducts,
+        F3: shortcutActionsRef.current.focusPayments,
+        F4: shortcutActionsRef.current.checkout,
+        F5: shortcutActionsRef.current.hold,
+        F6: shortcutActionsRef.current.drafts,
+        F7: shortcutActionsRef.current.credit,
+        F8: shortcutActionsRef.current.walkIn,
+        F9: shortcutActionsRef.current.focusSeller,
+        F10: shortcutActionsRef.current.focusCurrency
+      }
+      const action = actionByKey[event.key]
+      if (!action) return
+      event.preventDefault()
+      if (event.repeat) return
+      action()
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [])
+
   return (
     <div className="flex min-h-full flex-col gap-5 pb-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -512,7 +615,12 @@ function POSContent(): React.JSX.Element {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => setDraftsOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDraftsOpen(true)}
+            title="Facturas en espera (F6)"
+          >
             <Clock3 className="mr-2 h-4 w-4" />
             Facturas en espera
             {saleDrafts.length > 0 && (
@@ -526,6 +634,7 @@ function POSContent(): React.JSX.Element {
             variant="secondary"
             disabled={cart.lines.length === 0 || saveSaleDraft.isPending}
             onClick={() => void holdSale()}
+            title="Guardar factura (F5)"
           >
             {saveSaleDraft.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -535,6 +644,32 @@ function POSContent(): React.JSX.Element {
             {activeDraftId ? 'Actualizar factura' : 'Guardar factura'}
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-950">
+        <span className="flex items-center gap-1.5 font-semibold">
+          <Keyboard className="h-4 w-4" /> Operación rápida
+        </span>
+        {[
+          ['F1', 'Cliente'],
+          ['F2', 'Producto'],
+          ['F3', 'Pagos'],
+          ['F4', 'Cobrar'],
+          ['F5', 'Guardar factura'],
+          ['F6', 'Facturas en espera'],
+          ['F7', 'Crédito a favor'],
+          ['F8', 'Sin cliente'],
+          ['F9', 'Vendedor'],
+          ['F10', 'Moneda']
+        ].map(([key, label]) => (
+          <span key={key} className="whitespace-nowrap">
+            <kbd className="mr-1 rounded border border-blue-300 bg-white px-1.5 py-0.5 font-mono font-bold">
+              {key}
+            </kbd>
+            {label}
+          </span>
+        ))}
+        <span className="ml-auto text-blue-700">Flechas para elegir · Enter para avanzar</span>
       </div>
 
       {/* Ficha de la venta, equivalente al encabezado de Tiendas Gala. */}
@@ -552,7 +687,7 @@ function POSContent(): React.JSX.Element {
             setUseStoreCredit(false)
             setPays([])
           }}
-          onReady={() => setTimeout(() => searchRef.current?.focus(), 0)}
+          onReady={() => setTimeout(() => sellerTriggerRef.current?.focus(), 0)}
         />
 
         {cart.customer && cart.customer.returnCreditBalance > 0 && (
@@ -574,6 +709,7 @@ function POSContent(): React.JSX.Element {
                 setUseStoreCredit((current) => !current)
                 setPays([])
               }}
+              title="Alternar crédito a favor (F7)"
             >
               {useStoreCredit ? 'Crédito aplicado' : 'Usar crédito'}
             </Button>
@@ -587,9 +723,16 @@ function POSContent(): React.JSX.Element {
             </Label>
             <Select
               value={sellerId || NO_SELLER}
-              onValueChange={(v) => setSellerId(v === NO_SELLER ? '' : v)}
+              onValueChange={(v) => {
+                setSellerId(v === NO_SELLER ? '' : v)
+                window.setTimeout(() => currencyTriggerRef.current?.focus(), 0)
+              }}
             >
-              <SelectTrigger className="h-9 bg-background">
+              <SelectTrigger
+                ref={sellerTriggerRef}
+                className="h-9 bg-background"
+                title="Seleccionar vendedor (F9)"
+              >
                 <UserRound className="mr-2 h-4 w-4 text-muted-foreground" />
                 <SelectValue placeholder="Vendedor (opcional)" />
               </SelectTrigger>
@@ -614,9 +757,24 @@ function POSContent(): React.JSX.Element {
               onValueChange={(value) => {
                 setCurrencyMode(value as CurrencyMode)
                 setPays([])
+                window.setTimeout(() => {
+                  if (customerReady) {
+                    searchRef.current?.focus()
+                    searchRef.current?.select()
+                  } else {
+                    const customerInput = document.getElementById(
+                      'pos-customer-search'
+                    ) as HTMLInputElement | null
+                    customerInput?.focus()
+                  }
+                }, 0)
               }}
             >
-              <SelectTrigger className="h-9 bg-background">
+              <SelectTrigger
+                ref={currencyTriggerRef}
+                className="h-9 bg-background"
+                title="Seleccionar moneda de cobro (F10)"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -659,6 +817,7 @@ function POSContent(): React.JSX.Element {
           <div className="relative flex-1">
             <ScanLine className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              id="pos-product-search"
               ref={searchRef}
               value={code}
               onChange={(e) => {
@@ -843,10 +1002,7 @@ function POSContent(): React.JSX.Element {
                 />
               )}
               {benefits.creditAppliedCents > 0 && (
-                <TotalRow
-                  label="Crédito a favor"
-                  cents={-benefits.creditAppliedCents}
-                />
+                <TotalRow label="Crédito a favor" cents={-benefits.creditAppliedCents} />
               )}
               <div className="flex items-end justify-between border-t pt-3">
                 <span className="text-sm font-medium text-muted-foreground">
@@ -885,8 +1041,35 @@ function POSContent(): React.JSX.Element {
                   <button
                     key={method.value}
                     type="button"
+                    data-pos-payment-method={method.value}
                     disabled={disabled}
                     onClick={() => togglePaymentMethod(method.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+                      ) {
+                        return
+                      }
+                      event.preventDefault()
+                      const methods = Array.from(
+                        document.querySelectorAll<HTMLButtonElement>(
+                          '[data-pos-payment-method]:not(:disabled)'
+                        )
+                      )
+                      const current = methods.indexOf(event.currentTarget)
+                      const columns =
+                        window.innerWidth >= 1280 ? 4 : window.innerWidth >= 640 ? 3 : 2
+                      const offset =
+                        event.key === 'ArrowLeft'
+                          ? -1
+                          : event.key === 'ArrowRight'
+                            ? 1
+                            : event.key === 'ArrowUp'
+                              ? -columns
+                              : columns
+                      const next = (current + offset + methods.length) % methods.length
+                      methods[next]?.focus()
+                    }}
                     className={`flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border p-3 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                       selected
                         ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary/30'
@@ -913,7 +1096,35 @@ function POSContent(): React.JSX.Element {
               <p className="text-xs text-muted-foreground">Añade al menos un método de pago.</p>
             )}
             {pays.map((p) => (
-              <div key={p.id} className="space-y-1 rounded-md border p-2">
+              <div
+                key={p.id}
+                data-pos-payment-entry={p.method}
+                data-pos-payment-currency={PAYMENT_CURRENCY[p.method]}
+                className="space-y-1 rounded-md border p-2"
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || !(event.target instanceof HTMLInputElement)) return
+                  event.preventDefault()
+                  const entries = Array.from(
+                    document.querySelectorAll<HTMLElement>('[data-pos-payment-entry]')
+                  )
+                  const currentEntry = event.target.closest<HTMLElement>('[data-pos-payment-entry]')
+                  const current = currentEntry ? entries.indexOf(currentEntry) : -1
+                  const nextEntry = current >= 0 ? entries[current + 1] : undefined
+                  if (nextEntry) {
+                    const inputs =
+                      nextEntry.querySelectorAll<HTMLInputElement>('input:not(:disabled)')
+                    const input = inputs[nextEntry.dataset.posPaymentCurrency === 'VES' ? 1 : 0]
+                    input?.focus()
+                    input?.select()
+                  } else if (remaining === 0) {
+                    document.getElementById('pos-checkout-button')?.focus()
+                  } else {
+                    document
+                      .querySelector<HTMLButtonElement>('[data-pos-payment-method]:not(:disabled)')
+                      ?.focus()
+                  }
+                }}
+              >
                 <div className="flex items-center gap-1">
                   <div className="flex flex-1 items-center gap-2 text-sm font-medium">
                     {(() => {
@@ -979,10 +1190,12 @@ function POSContent(): React.JSX.Element {
             </div>
 
             <Button
+              id="pos-checkout-button"
               className="w-full"
               size="lg"
               onClick={() => void checkout()}
               disabled={submitting || cart.lines.length === 0 || remaining > 0}
+              title="Cobrar venta (F4)"
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Cobrar Ref. {formatReference(total)}
@@ -1029,6 +1242,15 @@ function CartRow({ line }: { line: CartLine }): React.JSX.Element {
             min={1}
             value={line.qty}
             onChange={(e) => cart.setQty(line.key, parseInt(e.target.value || '1', 10))}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return
+              event.preventDefault()
+              const scanner = document.getElementById(
+                'pos-product-search'
+              ) as HTMLInputElement | null
+              scanner?.focus()
+              scanner?.select()
+            }}
             className="mx-auto h-8 w-20 text-center"
           />
         )}
@@ -1068,13 +1290,7 @@ function CartRow({ line }: { line: CartLine }): React.JSX.Element {
   )
 }
 
-function TotalRow({
-  label,
-  cents
-}: {
-  label: string
-  cents: number
-}): React.JSX.Element {
+function TotalRow({ label, cents }: { label: string; cents: number }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="min-w-0 flex-1 text-muted-foreground">{label}</span>
